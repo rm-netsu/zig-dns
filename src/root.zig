@@ -1,0 +1,53 @@
+pub const types = @import("types.zig");
+pub const name = @import("name.zig");
+pub const message = @import("message.zig");
+pub const builder = @import("builder.zig");
+pub const rdata = @import("rdata.zig");
+pub const edns = @import("edns.zig");
+pub const tcp = @import("tcp.zig");
+pub const client = @import("client.zig");
+pub const validate = @import("validate.zig");
+pub const resolver = @import("resolver.zig");
+pub const server = @import("server.zig");
+pub const dnssec = @import("dnssec.zig");
+pub const svcb = @import("svcb.zig");
+pub const udp = @import("udp.zig");
+pub const dot = @import("dot.zig");
+pub const doh = @import("doh.zig");
+pub const doq = @import("doq.zig");
+const property = @import("property.zig");
+
+pub const Type = types.Type;
+pub const Class = types.Class;
+pub const Opcode = types.Opcode;
+pub const Rcode = types.Rcode;
+pub const Section = types.Section;
+pub const Flags = types.Flags;
+pub const Header = types.Header;
+pub const Name = name.Name;
+pub const Message = message.Message;
+pub const Question = message.Question;
+pub const Record = message.Record;
+pub const Builder = builder.Builder;
+pub const CompressionEntry = builder.CompressionEntry;
+
+test {
+    _ = types;
+    _ = name;
+    _ = message;
+    _ = builder;
+    _ = rdata;
+    _ = edns;
+    _ = tcp;
+    _ = client;
+    _ = validate;
+    _ = resolver;
+    _ = server;
+    _ = dnssec;
+    _ = svcb;
+    _ = udp;
+    _ = dot;
+    _ = doh;
+    _ = doq;
+    _ = property;
+}
