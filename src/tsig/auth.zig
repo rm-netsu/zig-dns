@@ -661,3 +661,40 @@ test "TSIG signing substitutes explicit Original ID into MAC input" {
     try std.testing.expectEqual(@as(u16, 0x1111), parsed.original_id);
     try verify(m, parsed, key, .{ .now = 1_700_000_000 });
 }
+
+test "TSIG signed BADTIME response carries client and server times" {
+    var key_name_buf: [64]u8 = undefined;
+    const key: Key = .{
+        .name = try wireName("key.example", &key_name_buf),
+        .secret = "badtime secret",
+    };
+
+    var request_buf: [512]u8 = undefined;
+    var request_compression: [16]builder_mod.CompressionEntry = undefined;
+    var request = try builder_mod.Builder.init(&request_buf, &request_compression, 0x8080, .{});
+    try request.addQuestion("example.com", .SOA, .IN);
+    var request_mac = try signBuilder(&request, key, .{ .time_signed = 1_700_000_000, .fudge = 30 });
+    defer request_mac.deinit();
+
+    var other: [6]u8 = undefined;
+    const server_time = try record_mod.badTimeOtherData(1_700_001_000, &other);
+    var response_buf: [512]u8 = undefined;
+    var response_compression: [16]builder_mod.CompressionEntry = undefined;
+    var response = try builder_mod.Builder.init(&response_buf, &response_compression, 0x8080, .{ .response = true, .rcode_low = @intCast(@intFromEnum(types.Rcode.not_auth)) });
+    try response.addQuestion("example.com", .SOA, .IN);
+    var response_mac = try signBuilder(&response, key, .{
+        .time_signed = 1_700_000_000, // the client's Time Signed
+        .fudge = 30,
+        .request_mac = request_mac.slice(),
+        .error_code = .bad_time,
+        .other_data = server_time,
+    });
+    defer response_mac.deinit();
+
+    const m = try message.Message.init(try response.finish());
+    var additional = try m.records(.additional);
+    const parsed = try record_mod.parse((try additional.next()).?);
+    try record_mod.validateSemantics(parsed, true);
+    try verify(m, parsed, key, .{ .now = 1_700_000_000, .request_mac = request_mac.slice() });
+    try std.testing.expectEqual(@as(u64, 1_700_001_000), try parsed.badTimeServerTime());
+}

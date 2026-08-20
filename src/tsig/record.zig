@@ -44,6 +44,11 @@ pub const Record = struct {
     pub fn keyName(self: Record) name_mod.Name {
         return self.rr.name;
     }
+
+    pub fn badTimeServerTime(self: Record) Error!u64 {
+        if (self.error_code != .bad_time or self.other_data.len != 6) return error.InvalidBadTimeData;
+        return std.mem.readInt(u48, self.other_data[0..6], .big);
+    }
 };
 
 pub fn parse(rr: message.Record) Error!Record {
@@ -105,6 +110,12 @@ pub fn validateSemantics(record: Record, is_response: bool) Error!void {
     } else if (record.other_data.len != 0) {
         return error.UnexpectedOtherData;
     }
+}
+
+pub fn badTimeOtherData(server_time: u64, out: *[6]u8) Error![]const u8 {
+    if (server_time > max_time_signed) return error.TimeSignedOutOfRange;
+    std.mem.writeInt(u48, out, @intCast(server_time), .big);
+    return out;
 }
 
 pub const Fields = struct {
@@ -243,4 +254,11 @@ test "failed TSIG append rolls builder back" {
     }));
     try std.testing.expectEqual(before, b.pos);
     try std.testing.expect(!b.record_open);
+}
+
+test "TSIG BADTIME server time helper round trips 48-bit value" {
+    var other: [6]u8 = undefined;
+    const encoded = try badTimeOtherData(0x0102_0304_0506, &other);
+    try std.testing.expectEqualSlices(u8, &.{ 1, 2, 3, 4, 5, 6 }, encoded);
+    try std.testing.expectError(error.TimeSignedOutOfRange, badTimeOtherData(max_time_signed + 1, &other));
 }
