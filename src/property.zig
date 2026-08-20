@@ -80,7 +80,7 @@ test "operational EDNS parsers survive arbitrary payloads" {
         for (payload[0..len]) |*b| b.* = rng.byte();
         const data = payload[0..len];
 
-        switch (rng.next() % 11) {
+        switch (rng.next() % 12) {
             0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
             1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
             2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
@@ -91,7 +91,8 @@ test "operational EDNS parsers survive arbitrary payloads" {
             7 => _ = edns.parseMultipleQtypeQuery(.{ .code = .MQTYPE_QUERY, .data = data }) catch continue,
             8 => _ = edns.parseMultipleQtypeResponse(.{ .code = .MQTYPE_RESPONSE, .data = data }) catch continue,
             9 => _ = edns.parseReportChannel(.{ .code = .REPORT_CHANNEL, .data = data }) catch continue,
-            else => _ = edns.parsePadding(.{ .code = .PADDING, .data = data }) catch continue,
+            10 => _ = edns.parsePadding(.{ .code = .PADDING, .data = data }) catch continue,
+            else => _ = edns.parseNsid(.{ .code = .NSID, .data = data }, (rng.next() & 1) != 0) catch continue,
         }
     }
 }

@@ -11,6 +11,7 @@ const mqtype_mod = @import("edns/mqtype.zig");
 const expire_mod = @import("edns/expire.zig");
 const report_channel_mod = @import("edns/report_channel.zig");
 const padding_mod = @import("edns/padding.zig");
+const nsid_mod = @import("edns/nsid.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -21,6 +22,7 @@ pub const mqtype = mqtype_mod;
 pub const expire = expire_mod;
 pub const report_channel = report_channel_mod;
 pub const padding = padding_mod;
+pub const nsid = nsid_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
 pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding };
@@ -155,6 +157,12 @@ pub fn parseMultipleQtypeResponse(opt: Option) Error!MultipleQtypeList {
     return mqtype_mod.parseResponse(opt.data) catch error.InvalidMultipleQtype;
 }
 
+pub const Nsid = nsid_mod.Nsid;
+pub fn parseNsid(opt: Option, response: bool) Error!Nsid {
+    if (opt.code != .NSID) return error.InvalidOption;
+    return nsid_mod.parse(opt.data, response);
+}
+
 pub const Padding = padding_mod.Padding;
 pub fn parsePadding(opt: Option) Error!Padding {
     if (opt.code != .PADDING) return error.InvalidOption;
@@ -198,6 +206,7 @@ pub fn reportChannel(opt: ?Opt) Error!?ReportChannel {
 pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
         .UPDATE_LEASE => _ = try parseUpdateLease(opt),
+        .NSID => _ = try parseNsid(opt, response),
         .ECS => _ = try clientSubnet(opt),
         .EXPIRE => {
             const value = try parseExpire(opt);
@@ -442,6 +451,14 @@ pub const OptionBuilder = struct {
             @memcpy(self.out[start + 4 + cookie_mod.client_length ..][0..server_bytes.len], server_bytes);
         }
         self.pos += 4 + data_len;
+    }
+
+    pub fn addNsidRequest(self: *OptionBuilder) error{NoSpace}!void {
+        try self.add(.NSID, &.{});
+    }
+
+    pub fn addNsidResponse(self: *OptionBuilder, identifier: []const u8) error{NoSpace}!void {
+        try self.add(.NSID, identifier);
     }
 
     pub fn addKeepaliveRequest(self: *OptionBuilder) error{NoSpace}!void {
@@ -756,4 +773,16 @@ test "RFC 8467 block padding builder is bounded and transactional" {
     const before = builder.pos;
     try std.testing.expect(!(try builder.addBlockPadding(125, 128, 128)));
     try std.testing.expectEqual(before, builder.pos);
+}
+
+test "RFC 5001 NSID typed builders preserve opaque response bytes" {
+    var bytes: [32]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addNsidRequest();
+    try builder.addNsidResponse(&.{ 0, 0xff, 0x41 });
+
+    var iterator: Iterator = .{ .bytes = builder.bytes() };
+    try std.testing.expectEqual(Nsid.request, try parseNsid((try iterator.next()).?, false));
+    const response = try parseNsid((try iterator.next()).?, true);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x41 }, response.response);
 }

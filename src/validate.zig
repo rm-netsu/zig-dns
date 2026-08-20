@@ -503,3 +503,20 @@ test "strict validator rejects duplicate RFC 7830 Padding options" {
     try duplicate.addOpt(1232, 0, 0, .{}, duplicate_options.bytes());
     try std.testing.expectError(error.InvalidPadding, messageStrict(try message.Message.init(try duplicate.finish()), .{}));
 }
+
+test "strict validator follows RFC 5001 receiver rule for NSID request payload" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [32]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var options = edns.OptionBuilder.init(&option_buf);
+    // A compliant resolver should use addNsidRequest(), but RFC 5001 requires
+    // the receiving server to ignore request payload data instead of rejecting
+    // the DNS message.
+    try options.add(.NSID, &.{ 0xde, 0xad, 0xbe, 0xef });
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8901, .{});
+    try query.addQuestion("example.com", .A, .IN);
+    try query.addOpt(1232, 0, 0, .{}, options.bytes());
+    _ = try messageStrict(try message.Message.init(try query.finish()), .{});
+}
