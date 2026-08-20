@@ -191,44 +191,55 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
     }
 }
 
-/// Strict message-context checks for options whose validity depends on the
-/// DNS opcode or on whether the message is a query/response.
-pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Error!void {
-    try validateOptions(opt, response);
+pub const MessageOptionSummary = struct {
+    has_zoneversion: bool = false,
+    mqtype_query: ?Option = null,
+    mqtype_response: ?Option = null,
+};
 
+/// Strict option validation plus message-context summary in one EDNS pass.
+///
+/// Keeping semantic discovery in the same pass as known-option validation
+/// avoids repeatedly rescanning every OPT RDATA in the common path where
+/// operational extensions are absent.
+pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Error!MessageOptionSummary {
+    var summary: MessageOptionSummary = .{};
     var iterator = opt.iterator();
-    var seen_zoneversion_query = false;
-    var seen_mqtype_query = false;
-    var seen_mqtype_response = false;
+    var seen_cookie = false;
     while (try iterator.next()) |option| {
+        // RFC 7873 considers only the first COOKIE. Later instances are
+        // framed normally but ignored rather than semantically interpreted.
+        if (option.code == .COOKIE) {
+            if (seen_cookie) continue;
+            seen_cookie = true;
+        }
+
+        try validateKnownOption(option, response);
         switch (option.code) {
             .EXPIRE => if (opcode != .query) return error.InvalidExpire,
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
             .ZONEVERSION => {
                 if (opcode != .query) return error.InvalidZoneVersion;
-                if (!response) {
-                    if (seen_zoneversion_query) return error.InvalidZoneVersion;
-                    seen_zoneversion_query = true;
-                }
+                if (!response and summary.has_zoneversion) return error.InvalidZoneVersion;
+                summary.has_zoneversion = true;
             },
             .MQTYPE_QUERY => {
                 if (opcode != .query) return error.InvalidMultipleQtype;
-                // A query may contain at most one request option. In a
-                // response this option is treated by RFC 10029 clients as
-                // an unsupported-extension signal rather than FORMERR.
-                if (!response) {
-                    if (seen_mqtype_query) return error.InvalidMultipleQtype;
-                    seen_mqtype_query = true;
-                }
+                // A request may contain at most one MQTYPE-Query. An echoed
+                // request option in a response is retained only as an
+                // unsupported-extension marker and is not a FORMERR by itself.
+                if (!response and summary.mqtype_query != null) return error.InvalidMultipleQtype;
+                if (summary.mqtype_query == null) summary.mqtype_query = option;
             },
             .MQTYPE_RESPONSE => {
                 if (opcode != .query or !response) return error.InvalidMultipleQtype;
-                if (seen_mqtype_response) return error.InvalidMultipleQtype;
-                seen_mqtype_response = true;
+                if (summary.mqtype_response != null) return error.InvalidMultipleQtype;
+                summary.mqtype_response = option;
             },
             else => {},
         }
     }
+    return summary;
 }
 
 /// RFC 10029 server-side extraction and validation of one MQTYPE-Query.

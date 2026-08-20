@@ -54,9 +54,9 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             if (owner.len != 0) return error.InvalidOptOwner;
             const opt = try edns.Opt.fromRecord(rr);
             if (options.require_edns_version_zero and opt.version != 0) return error.UnsupportedEdnsVersion;
-            try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
-            try validateZoneVersionQuestion(m, opt);
-            try validateMultipleQtypeQuestion(m, opt);
+            const option_summary = try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
+            if (option_summary.has_zoneversion) try validateZoneVersionQuestion(m, opt);
+            try validateMultipleQtypeQuestion(m, option_summary);
             result.opt = opt;
         } else if (rr.rr_type == .TSIG) {
             if (result.tsig != null) return error.MultipleTsig;
@@ -70,15 +70,6 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
 }
 
 fn validateZoneVersionQuestion(m: message.Message, opt: edns.Opt) Error!void {
-    var iterator = opt.iterator();
-    var has_zoneversion = false;
-    while (try iterator.next()) |option| {
-        if (option.code == .ZONEVERSION) {
-            has_zoneversion = true;
-            break;
-        }
-    }
-    if (!has_zoneversion) return;
     if (m.header.question_count != 1) return error.InvalidZoneVersion;
 
     var questions = m.questions();
@@ -109,40 +100,19 @@ fn validateZoneVersionQuestion(m: message.Message, opt: edns.Opt) Error!void {
     }
 }
 
-fn validateMultipleQtypeQuestion(m: message.Message, opt: edns.Opt) Error!void {
-    var iterator = opt.iterator();
-    var has_query = false;
-    var has_response = false;
-    while (try iterator.next()) |option| {
-        switch (option.code) {
-            .MQTYPE_QUERY => has_query = true,
-            .MQTYPE_RESPONSE => has_response = true,
-            else => {},
-        }
-    }
-
-    const relevant = if (m.header.flags.response) has_response else has_query;
-    if (!relevant) return;
+fn validateMultipleQtypeQuestion(m: message.Message, summary: edns.MessageOptionSummary) Error!void {
+    const relevant = if (m.header.flags.response) summary.mqtype_response else summary.mqtype_query;
+    const option = relevant orelse return;
     if (m.header.question_count != 1) return error.InvalidMultipleQtype;
 
     var questions = m.questions();
     const question = (try questions.next()) orelse return error.InvalidMultipleQtype;
     var scratch: edns.MultipleQtypeScratch = .{};
-
-    if (!m.header.flags.response) {
-        _ = try edns.multipleQtypeQuery(opt, question.qtype, &scratch);
-        return;
-    }
-
-    // An echoed MQTYPE-Query is deliberately not rejected here: RFC 10029
-    // tells clients to treat that transaction as extension-unsupported. A
-    // genuine MQTYPE-Response, if present, still has to be self-consistent.
-    var responses = opt.iterator();
-    while (try responses.next()) |option| {
-        if (option.code != .MQTYPE_RESPONSE) continue;
-        const list = try edns.parseMultipleQtypeResponse(option);
-        list.validate(question.qtype, &scratch) catch return error.InvalidMultipleQtype;
-    }
+    const list = if (m.header.flags.response)
+        try edns.parseMultipleQtypeResponse(option)
+    else
+        try edns.parseMultipleQtypeQuery(option);
+    list.validate(question.qtype, &scratch) catch return error.InvalidMultipleQtype;
 }
 
 fn shouldValidateKnownRdata(opcode: types.Opcode, section: types.Section, rr: message.Record) bool {
