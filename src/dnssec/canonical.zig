@@ -338,7 +338,7 @@ test "canonical RRSIG lowercases signer while NSEC preserves next-domain case" {
     const rrsig_packet = [_]u8{
         0,    1,   0x80, 0,   0,   0,   0,    1,   0,   0, 0,   0,
         7,    'E', 'X',  'A', 'M', 'P', 'L',  'E', 0,   0, 46,  0,
-        1,    0,   0,    0,   1,   0,   31,   0,   1,   8, 1,   0,
+        1,    0,   0,    0,   1,   0,   36,   0,   1,   8, 1,   0,
         0,    0,   1,    0,   0,   0,   2,    0,   0,   0, 1,   0x12,
         0x34, 7,   'S',  'I', 'G', 'N', 'E',  'R', 'S', 7, 'E', 'X',
         'A',  'M', 'P',  'L', 'E', 0,   0xaa,
@@ -366,7 +366,7 @@ test "post-RFC3597 SVCB TargetName case is preserved" {
     const packet = [_]u8{
         0,   1,   0x80, 0,   0,   0,   0,   1,   0, 0, 0,   0,
         7,   'E', 'X',  'A', 'M', 'P', 'L', 'E', 0, 0, 64,  0,
-        1,   0,   0,    0,   1,   0,   10,  0,   1, 3, 'S', 'v',
+        1,   0,   0,    0,   1,   0,   11,  0,   1, 3, 'S', 'v',
         'C', 3,   'N',  'E', 'T', 0,
     };
     const rr = try firstRecord(&packet);
