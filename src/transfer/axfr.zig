@@ -268,6 +268,20 @@ pub fn queryBuilder(
     return builder;
 }
 
+/// Wire-name variant for binary/non-presentation zone names.
+pub fn queryBuilderWire(
+    out: []u8,
+    compression: []builder_mod.CompressionEntry,
+    id: u16,
+    zone: name_mod.Uncompressed,
+    zone_class: types.Class,
+) Error!builder_mod.Builder {
+    if (!validClass(zone_class)) return error.InvalidClass;
+    var builder = try builder_mod.Builder.init(out, compression, id, .{});
+    try builder.addQuestionWire(zone, .AXFR, zone_class);
+    return builder;
+}
+
 fn validClass(class: types.Class) bool {
     return class != .ANY and class != .NONE and @intFromEnum(class) != 0;
 }
