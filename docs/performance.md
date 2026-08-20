@@ -1,9 +1,10 @@
 # Performance
 
-`dns` keeps benchmarks separate from correctness tests so release builds can
-measure hot paths without making normal CI timing-sensitive.
+`dns` keeps timing-sensitive benchmarks separate from correctness tests. The
+benchmark roots are still compiled by `zig build check`, so API changes cannot
+silently leave them stale.
 
-Run the benchmarks with Zig 0.16.0:
+Run the ReleaseFast benchmarks with Zig 0.16.0:
 
 ```bash
 zig build bench-core -Doptimize=ReleaseFast
@@ -11,35 +12,100 @@ zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
 ```
 
-The benchmark roots are also compiled by `zig build check` so API changes
-cannot silently break them.
+For cross-release core A/B measurements, compile the **same current benchmark
+source** against each tag:
 
-## 0.2.0 review
+```bash
+python3 bench/compare_releases.py \
+  v0.1.0 v0.2.0 v0.3.0 v0.4.0 \
+  --runs 13 \
+  --zig /path/to/zig
+```
 
-The figures below are release-review measurements from the x86_64 Linux
-project environment. They are not portable performance promises. Compare
-changes on the same machine and toolchain.
+The runner pins benchmark processes to one CPU when `taskset` is available,
+warms every binary before sampling, rotates/reverses release order between
+rounds, reports median absolute deviation (MAD), and records raw samples as
+JSON when `--json` is supplied. `--round-offset` plus `--merge-json` allows the
+same interleaved run sequence to be split across environments with per-process
+time limits.
 
-### Core A/B against v0.1.0
+## Real-data core corpus
 
-The same `bench/core.zig` source was compiled against `v0.1.0` and the current
-0.2.0 development tree with `-OReleaseFast`. Nine runs were interleaved and
-the median throughput was used:
+`bench/core.zig` no longer benchmarks one synthetic `www.example.com` packet or
+an isolated ~10 ns `Name.writeWire` call. It uses the deterministic fixtures in
+`bench/corpus/`.
 
-| Operation | v0.1.0 | 0.2.0 tree | Delta |
+The 2026-08-20 snapshot contains **13 messages / 3278 bytes of DNS wire data per
+corpus pass** and covers:
+
+- short A and AAAA responses;
+- multi-record NS, CAA, MX, and TXT responses;
+- CNAME indirection;
+- NODATA and NXDOMAIN with SOA authority data;
+- DS and an 853-byte root DNSKEY response;
+- an 884-byte `.com` referral with 13 NS records, DS, and IPv4/IPv6 glue;
+- EDNS on every message.
+
+These are normalized snapshots built from real RRsets, not live network calls
+or literal packet captures. IDs, TTLs, ordering, flags, and EDNS details may be
+normalized so a DNS change tomorrow cannot change an A/B result. Provenance and
+normalization notes live in `bench/corpus/README.md`.
+
+The timed workloads are:
+
+1. parse the message and iterate every question/RR;
+2. strict structural validation;
+3. parse and materialize every question/owner name;
+4. build equivalent representative responses with caller-owned buffers and
+   compression storage.
+
+This deliberately removes the old isolated name microbenchmark. Across earlier
+runs it reported changes of roughly -7% and +8% between releases even when the
+underlying name-writing algorithm had not materially changed, making it a poor
+regression signal.
+
+## Core release A/B review
+
+The following ReleaseFast review used Zig 0.16.0, benchmark hash
+`23c4a01c33`, one pinned CPU, and 13 interleaved rounds. The throughput columns
+are independent medians. The final two columns use **paired samples from the
+same rounds**, which are the primary regression signal because they are less
+sensitive to host-wide drift during a long run.
+
+| Workload | v0.1.0 | v0.2.0 | v0.3.0 | v0.4.0 | v0.4 vs v0.1 paired | paired MAD |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| parse real corpus | 2.551 M msg/s | 2.639 M | 2.643 M | 2.635 M | +0.44% | 5.42 pp |
+| strict validate | 0.960 M msg/s | 0.972 M | 0.960 M | 0.946 M | +0.51% | 4.98 pp |
+| parse + materialize names | 2.304 M msg/s | 2.248 M | 2.231 M | 2.252 M | -0.04% | 2.69 pp |
+| build real corpus | 1.292 M msg/s | 1.319 M | 1.308 M | 1.344 M | +4.05% | 2.68 pp |
+
+Adjacent-release paired medians were:
+
+| Workload | v0.1→v0.2 | v0.2→v0.3 | v0.3→v0.4 |
 | --- | ---: | ---: | ---: |
-| parse message + iterate sections | 5,742,955 ops/s | 5,724,278 ops/s | -0.33% |
-| decompress compressed owner name | 66,337,055 ops/s | 69,870,201 ops/s | +5.33% |
-| build representative response | 2,548,040 ops/s | 2,602,656 ops/s | +2.14% |
+| parse real corpus | +2.47% | +0.14% | -1.04% |
+| strict validate | +0.12% | -1.99% | +1.37% |
+| parse + materialize names | +1.44% | -3.64% | +3.20% |
+| build real corpus | +2.62% | -1.89% | +3.05% |
 
-The existing parser, `Name.writeWire`, and builder hot paths were not changed
-by the DNSSEC work. These small differences are treated as environment/code
-layout noise rather than claimed speedups. The review found no material core
-throughput regression.
+The raw 13-round samples and derived statistics are retained in
+`bench/results/core-real-corpus-v0.1.0-v0.4.0-2026-08-20.json`.
 
-### DNSSEC baseline
+### Regression verdict
 
-Five ReleaseFast runs were sampled; the table reports medians:
+No material core regression is confirmed between `v0.1.0` and `v0.4.0` on the
+real-data corpus. The apparent strict-validation regression seen in shorter
+runs did not survive the longer paired A/B review. Parse, validation, and name
+materialization are effectively flat relative to their observed run-to-run
+spread. Builder throughput is higher in this sample, but it is not claimed as
+an optimization because builder logic was not intentionally optimized across
+these releases and code-layout effects are measurable at this scale.
+
+## DNSSEC baseline
+
+DNSSEC was new in 0.2.0, so these are baselines rather than cross-tag speedup
+claims. Five ReleaseFast runs were sampled on the same x86_64 Linux project
+environment; the table reports medians:
 
 | Operation | Median |
 | --- | ---: |
@@ -57,30 +123,32 @@ the validation limit caller-owned instead of hiding an unbounded CPU policy.
 
 ## 0.4.0 transfer baseline
 
-AXFR/IXFR state machines are new in 0.4.0, so there is no meaningful A/B
-comparison with v0.3.0. Five ReleaseFast runs were sampled on the same x86_64
-Linux project environment; the table reports median latency:
+AXFR/IXFR state machines were new in 0.4.0, so there is no meaningful A/B
+comparison with v0.3.0. Five ReleaseFast runs were sampled; the table reports
+median latency:
 
 | Operation | Median | Persistent storage |
 | --- | ---: | ---: |
 | single-message AXFR, 4 ordinary RRs | 1,470 ns/op | 765 B |
 | one-delta IXFR, 1 delete + 1 add | 1,973 ns/op | 1,275 B |
 
-The corresponding `Transfer` descriptors are 56 B for AXFR and 104 B for
-IXFR. The benchmark performs parsing/state transitions but no socket I/O,
-heap allocation, zone-store writes, or TSIG cryptography.
+The corresponding `Transfer` descriptors are 56 B for AXFR and 104 B for IXFR.
+The benchmark performs parsing/state transitions but no socket I/O, heap
+allocation, zone-store writes, or TSIG cryptography.
 
-Separate stress tests feed 256 AXFR DNS messages through the same fixed
-storage and replay generated IXFR delta streams. The state size is therefore
-independent of transfer message count and zone size; only the caller's current
-DNS message buffer and destination zone store scale with data volume.
+Separate stress tests feed 256 AXFR DNS messages through the same fixed storage
+and replay generated IXFR delta streams. Protocol state is therefore independent
+of transfer message count and zone size; only the caller's current DNS message
+buffer and destination zone store scale with transferred data.
 
 ## Benchmark policy
 
 Before accepting a hot-path optimization:
 
-1. run the representative benchmark in ReleaseFast;
-2. compare against the previous tag using the same benchmark source;
-3. check caller-owned/persistent state size as well as throughput;
-4. keep correctness/property/interoperability tests independent from timing;
-5. do not keep an optimization whose benefit disappears on realistic data.
+1. benchmark realistic data in ReleaseFast;
+2. compare tags with the same benchmark source and fixture hash;
+3. prefer interleaved paired deltas over unrelated one-shot medians;
+4. report spread (at least MAD), not only the fastest run;
+5. measure caller-owned/persistent state and allocations as well as throughput;
+6. keep correctness/property/interoperability tests independent from timing;
+7. reject optimizations whose benefit disappears on realistic workloads.

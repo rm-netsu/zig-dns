@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replace synthetic core microbenchmarks with a deterministic real-RRset wire corpus and an interleaved cross-tag A/B runner that reports MAD and paired regression deltas.
+
 ## 0.4.0 - 2026-08-20
 
 - Add allocation-free RFC 5936 AXFR streaming with first/closing SOA validation, borrowed record events, query builders, premature-EOF detection, and fixed caller-owned state.
