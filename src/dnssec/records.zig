@@ -91,7 +91,6 @@ pub fn nsec3(rr: message.Record) Error!Nsec3 {
     const hash_pos = hash_len_pos + 1;
     if (hash_pos + hash_len > rr.rdata.len) return error.InvalidLength;
     const bitmap = rr.rdata[hash_pos + hash_len ..];
-    if (bitmap.len == 0) return error.InvalidLength;
     return .{
         .hash_algorithm = rr.rdata[0],
         .flags = rr.rdata[1],

@@ -3,11 +3,11 @@ const types = @import("../types.zig");
 const name_mod = @import("../name.zig");
 const message = @import("../message.zig");
 const records = @import("records.zig");
+const proof_name = @import("proof_name.zig");
 
-pub const Error = records.Error || error{
-    NotNsec,
-    NotSubdomain,
-};
+pub const nsec3 = @import("nsec3.zig");
+
+pub const Error = records.Error || proof_name.Error || error{NotNsec};
 
 /// Returns whether an authenticated NSEC RR covers `candidate` in RFC 4034
 /// canonical name order. The caller remains responsible for authenticating the
@@ -51,10 +51,10 @@ pub fn nsecProvesNameError(qname: name_mod.Name, closest_encloser: name_mod.Name
     var ce_wire_buf: [name_mod.Name.max_wire_len]u8 = undefined;
     const q_wire = try qname.writeCanonicalWire(&q_wire_buf);
     const ce_wire = try closest_encloser.writeCanonicalWire(&ce_wire_buf);
-    _ = try strictSuffixOffset(q_wire, ce_wire);
+    _ = try proof_name.strictSuffixOffset(q_wire, ce_wire);
 
     var wildcard_buf: [name_mod.Name.max_wire_len]u8 = undefined;
-    const wildcard = try wildcardName(ce_wire, &wildcard_buf);
+    const wildcard = try proof_name.wildcardName(ce_wire, &wildcard_buf);
     return (try anyNsecCovers(proof, qname)) and (try anyNsecCovers(proof, wildcard));
 }
 
@@ -66,7 +66,7 @@ pub fn nsecProvesWildcardAnswer(qname: name_mod.Name, closest_encloser: name_mod
     var next_closer_buf: [name_mod.Name.max_wire_len]u8 = undefined;
     const q_wire = try qname.writeCanonicalWire(&q_wire_buf);
     const ce_wire = try closest_encloser.writeCanonicalWire(&ce_wire_buf);
-    const next_closer = try nextCloserName(q_wire, ce_wire, &next_closer_buf);
+    const next_closer = try proof_name.nextCloserName(q_wire, ce_wire, &next_closer_buf);
     return anyNsecCovers(proof, next_closer);
 }
 
@@ -79,8 +79,8 @@ pub fn nsecProvesWildcardNoData(qname: name_mod.Name, qtype: types.Type, closest
     var next_closer_buf: [name_mod.Name.max_wire_len]u8 = undefined;
     const q_wire = try qname.writeCanonicalWire(&q_wire_buf);
     const ce_wire = try closest_encloser.writeCanonicalWire(&ce_wire_buf);
-    const wildcard = try wildcardName(ce_wire, &wildcard_buf);
-    const next_closer = try nextCloserName(q_wire, ce_wire, &next_closer_buf);
+    const wildcard = try proof_name.wildcardName(ce_wire, &wildcard_buf);
+    const next_closer = try proof_name.nextCloserName(q_wire, ce_wire, &next_closer_buf);
 
     var wildcard_nodata = false;
     for (proof) |rr| {
@@ -99,40 +99,6 @@ fn anyNsecCovers(proof: []const message.Record, candidate: name_mod.Name) Error!
         if (try nsecCovers(rr, candidate)) return true;
     }
     return false;
-}
-
-fn wildcardName(closest_encloser_wire: []const u8, out: []u8) Error!name_mod.Name {
-    if (closest_encloser_wire.len + 2 > out.len or closest_encloser_wire.len + 2 > name_mod.Name.max_wire_len) return error.NameTooLong;
-    out[0] = 1;
-    out[1] = '*';
-    @memcpy(out[2..][0..closest_encloser_wire.len], closest_encloser_wire);
-    return name_mod.Name.init(out[0 .. closest_encloser_wire.len + 2], 0);
-}
-
-fn nextCloserName(qname_wire: []const u8, closest_encloser_wire: []const u8, out: []u8) Error!name_mod.Name {
-    const suffix_offset = try strictSuffixOffset(qname_wire, closest_encloser_wire);
-    var pos: usize = 0;
-    var previous: usize = 0;
-    while (pos < suffix_offset) {
-        previous = pos;
-        pos += 1 + qname_wire[pos];
-    }
-    const wire = qname_wire[previous..];
-    if (wire.len > out.len) return error.BufferTooSmall;
-    @memcpy(out[0..wire.len], wire);
-    return name_mod.Name.init(out[0..wire.len], 0);
-}
-
-fn strictSuffixOffset(name_wire: []const u8, suffix_wire: []const u8) Error!usize {
-    var pos: usize = 0;
-    while (true) {
-        if (std.mem.eql(u8, name_wire[pos..], suffix_wire)) {
-            if (pos == 0) return error.NotSubdomain;
-            return pos;
-        }
-        if (name_wire[pos] == 0) return error.NotSubdomain;
-        pos += 1 + name_wire[pos];
-    }
 }
 
 fn appendNsec(builder: anytype, owner: []const u8, next: []const u8, bitmap: []const u8) !void {
