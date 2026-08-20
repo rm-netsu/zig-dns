@@ -234,7 +234,7 @@ test "extracts delegation NS DS and bailiwick-aware glue" {
     try b.addNameRecord(.authority, "child.example", .NS, 3600, "ns3.external.test");
     try b.addRawRecord(.authority, "child.example", .DS, .IN, 3600, &.{ 0x12, 0x34, 15, 2, 1, 2, 3, 4 });
     try b.addA(.additional, "ns1.child.example", 3600, .{ 192, 0, 2, 1 });
-    try b.addAaaa(.additional, "ns2.sibling.example", 3600, .{ 0x20, 0x01, 0x0d, 0xb8 } ++ [_]u8{0} ** 11 ++ .{2});
+    try b.addAAAA(.additional, "ns2.sibling.example", 3600, .{ 0x20, 0x01, 0x0d, 0xb8 } ++ [_]u8{0} ** 11 ++ .{2});
     try b.addA(.additional, "ns3.external.test", 3600, .{ 198, 51, 100, 3 });
     try b.addA(.additional, "unrelated.example", 3600, .{ 203, 0, 113, 9 });
     const msg = try message.Message.init(try b.finish());

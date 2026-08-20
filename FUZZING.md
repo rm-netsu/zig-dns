@@ -13,7 +13,8 @@ Current replay coverage includes:
 7. arbitrary TSIG RDATA through the RFC 8945 structural parser;
 8. UPDATE prescan over arbitrary UPDATE-shaped packets plus generated semantic operations;
 9. generated IXFR delta streams plus deterministic wire mutation replay through the state machine;
-10. bounded EDNS and RDATA parsing tests in their owning modules.
+10. resolver response classification over arbitrary QUERY-shaped packets;
+11. bounded EDNS and RDATA parsing tests in their owning modules.
 
 Run it with:
 
@@ -33,6 +34,7 @@ For an external fuzzing harness, the best stateless entry points are:
 - `dnssec.denial.nsec3.hashName` with an explicit iteration cap;
 - `tsig.parse` followed by `tsig.validateSemantics`;
 - `update.validateRequest` over packets with OPCODE=UPDATE.
-- `transfer.axfr.Transfer` / `transfer.ixfr.Transfer` with arbitrary valid-message boundaries and explicit EOF.
+- `transfer.axfr.Transfer` / `transfer.ixfr.Transfer` with arbitrary valid-message boundaries and explicit EOF;
+- `resolver.response.classify` followed by alias/referral processing on structurally valid responses.
 
 The parser APIs do not allocate, so fuzz harnesses can run them with fixed stack/caller buffers and no allocator noise.

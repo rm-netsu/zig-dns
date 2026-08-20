@@ -10,6 +10,7 @@ const tsig = @import("tsig.zig");
 const update = @import("update.zig");
 const types = @import("types.zig");
 const transfer = @import("transfer.zig");
+const resolver = @import("resolver.zig");
 
 const Lcg = struct {
     state: u64,
@@ -351,5 +352,25 @@ fn shuffle(rng: *Lcg, values: []u8) void {
         const tmp = values[i];
         values[i] = values[j];
         values[j] = tmp;
+    }
+}
+
+test "resolver response classifier survives arbitrary QUERY-shaped packets" {
+    var rng: Lcg = .{ .state = 0x2308_6672_9471_0001 };
+    var bytes: [768]u8 = undefined;
+    const q: @import("client.zig").QuestionKey = .{ .name = "example.com", .qtype = .A };
+
+    for (0..4096) |_| {
+        const len: usize = 12 + @as(usize, @intCast(rng.next() % (bytes.len - 11)));
+        for (bytes[0..len]) |*b| b.* = rng.byte();
+        // Keep QR=1 and OPCODE=QUERY so successful parses reach resolver
+        // semantics rather than being rejected solely by the outer envelope.
+        var flags = std.mem.readInt(u16, bytes[2..4], .big);
+        flags &= ~(@as(u16, 0xf) << 11);
+        flags |= @as(u16, 1) << 15;
+        std.mem.writeInt(u16, bytes[2..4], flags, .big);
+
+        const m = message.Message.init(bytes[0..len]) catch continue;
+        _ = resolver.response.classify(m, q) catch continue;
     }
 }
