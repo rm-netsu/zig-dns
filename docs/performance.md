@@ -10,6 +10,7 @@ Run the ReleaseFast benchmarks with Zig 0.16.0:
 zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
+zig build bench-resolver -Doptimize=ReleaseFast
 ```
 
 For cross-release core A/B measurements, compile the **same current benchmark
@@ -140,6 +141,26 @@ Separate stress tests feed 256 AXFR DNS messages through the same fixed storage
 and replay generated IXFR delta streams. Protocol state is therefore independent
 of transfer message count and zone size; only the caller's current DNS message
 buffer and destination zone store scale with transferred data.
+
+## 0.5.0 resolver-semantics baseline
+
+Resolver classification, alias/referral processing, and bounded cache lookup
+are new in 0.5.0, so these are baselines rather than cross-tag speedup claims.
+Five ReleaseFast runs were sampled on the same x86_64 Linux project
+environment; the table reports medians (MAD in parentheses):
+
+| Operation | Median |
+| --- | ---: |
+| classify one response from the 13-message real corpus | 486 ns/op (14.6 ns) |
+| extract the real `.com` referral (13 NS + DS + A/AAAA glue) | 43.3 us/op (5.86 us) |
+| bounded cache lookup using real corpus query names | 79.3 ns/op (4.53 ns) |
+| follow the real `status.openai.com` CNAME | 131 ns/op (9.32 ns) |
+
+The referral workload intentionally uses the zero-allocation iterator path and
+performs no pre-indexing. Its cost is therefore a useful baseline for a future
+optional caller-scratch index if iterative-resolver profiling shows referral
+processing to be material. No heap allocation or network I/O is included in
+any resolver benchmark.
 
 ## Benchmark policy
 

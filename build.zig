@@ -93,6 +93,17 @@ pub fn build(b: *std.Build) void {
     const transfer_bench_step = b.step("bench-transfer", "Benchmark AXFR and IXFR state machines");
     transfer_bench_step.dependOn(&b.addRunArtifact(transfer_bench).step);
 
+    const resolver_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/resolver.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const resolver_bench = b.addExecutable(.{ .name = "dns-resolver-bench", .root_module = resolver_bench_mod });
+    check.dependOn(&resolver_bench.step);
+    const resolver_bench_step = b.step("bench-resolver", "Benchmark resolver semantic primitives");
+    resolver_bench_step.dependOn(&b.addRunArtifact(resolver_bench).step);
+
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);
