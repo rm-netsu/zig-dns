@@ -13,6 +13,7 @@ pub const dnssec = @import("dnssec.zig");
 pub const tsig = @import("tsig.zig");
 pub const update = @import("update.zig");
 pub const notify = @import("notify.zig");
+pub const transfer = @import("transfer.zig");
 pub const svcb = @import("svcb.zig");
 pub const udp = @import("udp.zig");
 pub const dot = @import("dot.zig");
@@ -51,6 +52,7 @@ test {
     _ = tsig;
     _ = update;
     _ = notify;
+    _ = transfer;
     _ = svcb;
     _ = udp;
     _ = dot;
