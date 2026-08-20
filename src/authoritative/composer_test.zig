@@ -586,3 +586,36 @@ test "authoritative TSIG reservation truncates a whole RRset before signing" {
     try std.testing.expect(signed.bytes.len <= 512);
     _ = try validate.messageStrict(try message.Message.init(signed.bytes), .{});
 }
+
+test "authoritative negative SOA and covering RRSIG TTL follow RFC 2308" {
+    var short_minimum_soa = soa_rdata;
+    std.mem.writeInt(u32, short_minimum_soa[short_minimum_soa.len - 4 ..][0..4], 30, .big);
+    const signed_items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 300, .rdata = &short_minimum_soa } },
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 300, .rdata = &rrsig_soa_rdata } },
+    };
+    const proof_items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .NSEC, .class = .IN, .ttl = 60, .rdata = &nsec_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 60, .rdata = &rrsig_nsec_rdata } },
+    };
+    var store: TestStore = .{ .items = &signed_items, .proof_items = &proof_items, .apex_name = .{ .bytes = apex_wire } };
+    var composer = Composer(TestStore).init(&store);
+
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [24]builder.CompressionEntry = undefined;
+    var qb = try builder.Builder.init(&qbuf, &qcomp, 0x9911, .{});
+    try qb.addQuestion("missing.example", .AAAA, .IN);
+    try qb.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, &.{});
+
+    var out: [1232]u8 = undefined;
+    var comp: [96]builder.CompressionEntry = undefined;
+    const result = try composer.compose(try message.Message.init(try qb.finish()), &out, &comp, .{ .signed_zone = true });
+    const m = try message.Message.init(result.bytes);
+    var authority = try m.records(.authority);
+    const soa = (try authority.next()).?;
+    const soa_sig = (try authority.next()).?;
+    try std.testing.expectEqual(types.Type.SOA, soa.rr_type);
+    try std.testing.expectEqual(@as(u32, 30), soa.ttl);
+    try std.testing.expectEqual(types.Type.RRSIG, soa_sig.rr_type);
+    try std.testing.expectEqual(@as(u32, 30), soa_sig.ttl);
+}

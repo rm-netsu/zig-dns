@@ -166,7 +166,8 @@ pub fn Composer(comptime Store: type) type {
                 .nodata, .nxdomain => {
                     const apex = self.store.apex();
                     const soa = (try self.lookupSet(apex, .SOA, options.zone_class)) orelse return error.MissingSoa;
-                    if (!(try self.emitSignedRrset(&b, soa, .authority, null, true, want_dnssec, options))) {
+                    const negative_ttl = try negativeSoaTtl(soa.first);
+                    if (!(try self.emitSignedRrsetWithTtl(&b, soa, .authority, null, true, want_dnssec, options, negative_ttl))) {
                         truncated = true;
                     } else if (want_dnssec) {
                         const proof_kind: ProofKind = switch (selection) {
@@ -250,15 +251,19 @@ pub fn Composer(comptime Store: type) type {
         }
 
         fn emitSignedRrset(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, want_dnssec: bool, options: Options) Error!bool {
-            if (!want_dnssec or set.rr_type == .RRSIG) return self.emitRrset(b, set, section, owner_override, required, options);
+            return self.emitSignedRrsetWithTtl(b, set, section, owner_override, required, want_dnssec, options, null);
+        }
+
+        fn emitSignedRrsetWithTtl(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, want_dnssec: bool, options: Options, ttl_override: ?u32) Error!bool {
+            if (!want_dnssec or set.rr_type == .RRSIG) return self.emitRrsetWithTtl(b, set, section, owner_override, required, options, ttl_override);
 
             const snapshot = b.*;
-            if (!(try self.emitRrset(b, set, section, owner_override, false, options))) {
+            if (!(try self.emitRrsetWithTtl(b, set, section, owner_override, false, options, ttl_override))) {
                 b.* = snapshot;
                 if (required) b.setTruncated(true);
                 return false;
             }
-            if (!(try self.emitSignatures(b, set.owner, set.rr_type, section, owner_override, options))) {
+            if (!(try self.emitSignatures(b, set.owner, set.rr_type, section, owner_override, options, ttl_override))) {
                 b.* = snapshot;
                 if (required) b.setTruncated(true);
                 return false;
@@ -266,7 +271,7 @@ pub fn Composer(comptime Store: type) type {
             return true;
         }
 
-        fn emitSignatures(self: *Self, b: *builder.Builder, owner: name_mod.Uncompressed, covered: types.Type, section: types.Section, owner_override: ?name_mod.Uncompressed, options: Options) Error!bool {
+        fn emitSignatures(self: *Self, b: *builder.Builder, owner: name_mod.Uncompressed, covered: types.Type, section: types.Section, owner_override: ?name_mod.Uncompressed, options: Options, ttl_override: ?u32) Error!bool {
             var it = (try self.store.lookup(owner, .RRSIG)) orelse return error.MissingRrsig;
             const snapshot = b.*;
             const output_owner = owner_override orelse owner;
@@ -284,7 +289,7 @@ pub fn Composer(comptime Store: type) type {
                 }
                 const type_covered: types.Type = @enumFromInt(std.mem.readInt(u16, rr.rdata[0..2], .big));
                 if (type_covered != covered) continue;
-                b.addRawRecordWire(section, output_owner, .RRSIG, rr.class, rr.ttl, rr.rdata) catch |err| switch (err) {
+                b.addRawRecordWire(section, output_owner, .RRSIG, rr.class, ttl_override orelse rr.ttl, rr.rdata) catch |err| switch (err) {
                     error.NoSpace => {
                         b.* = snapshot;
                         return false;
@@ -341,11 +346,15 @@ pub fn Composer(comptime Store: type) type {
         }
 
         fn emitRrset(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, options: Options) Error!bool {
+            return self.emitRrsetWithTtl(b, set, section, owner_override, required, options, null);
+        }
+
+        fn emitRrsetWithTtl(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, options: Options, ttl_override: ?u32) Error!bool {
             _ = self;
             const snapshot = b.*;
             const owner = owner_override orelse set.owner;
 
-            if (!try emitRecord(b, set.first, set.owner, set.rr_type, section, owner, options.zone_class)) {
+            if (!try emitRecord(b, set.first, set.owner, set.rr_type, section, owner, options.zone_class, ttl_override)) {
                 b.* = snapshot;
                 if (required) b.setTruncated(true);
                 return false;
@@ -358,7 +367,7 @@ pub fn Composer(comptime Store: type) type {
                     return err;
                 };
                 const rr = maybe orelse break;
-                if (!try emitRecord(b, rr, set.owner, set.rr_type, section, owner, options.zone_class)) {
+                if (!try emitRecord(b, rr, set.owner, set.rr_type, section, owner, options.zone_class, ttl_override)) {
                     b.* = snapshot;
                     if (required) b.setTruncated(true);
                     return false;
@@ -459,13 +468,23 @@ fn appendResponseOpt(out: []u8, pos: usize, advertised_payload: u16, rcode: type
     return out[0..p];
 }
 
+fn negativeSoaTtl(rr: ZoneRecord) CoreError!u32 {
+    if (rr.rr_type != .SOA) return error.StoreContract;
+    var pos = name_mod.uncompressedConsumedLen(rr.rdata, 0) catch return error.StoreContract;
+    const second = name_mod.uncompressedConsumedLen(rr.rdata, pos) catch return error.StoreContract;
+    pos += second;
+    if (rr.rdata.len - pos != 20) return error.StoreContract;
+    const minimum = std.mem.readInt(u32, rr.rdata[pos + 16 ..][0..4], .big);
+    return @min(rr.ttl, minimum);
+}
+
 fn validateStoreRecord(rr: ZoneRecord, owner: name_mod.Uncompressed, rr_type: types.Type, class: types.Class) CoreError!void {
     if (rr.rr_type != rr_type or rr.class != class or !(try h.namesEqual(rr.owner, owner))) return error.StoreContract;
 }
 
-fn emitRecord(b: *builder.Builder, rr: ZoneRecord, expected_owner: name_mod.Uncompressed, expected_type: types.Type, section: types.Section, output_owner: name_mod.Uncompressed, class: types.Class) CoreError!bool {
+fn emitRecord(b: *builder.Builder, rr: ZoneRecord, expected_owner: name_mod.Uncompressed, expected_type: types.Type, section: types.Section, output_owner: name_mod.Uncompressed, class: types.Class, ttl_override: ?u32) CoreError!bool {
     try validateStoreRecord(rr, expected_owner, expected_type, class);
-    b.addRawRecordWire(section, output_owner, rr.rr_type, rr.class, rr.ttl, rr.rdata) catch |err| switch (err) {
+    b.addRawRecordWire(section, output_owner, rr.rr_type, rr.class, ttl_override orelse rr.ttl, rr.rdata) catch |err| switch (err) {
         error.NoSpace => return false,
         else => return err,
     };
