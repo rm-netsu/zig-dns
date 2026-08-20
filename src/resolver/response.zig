@@ -33,6 +33,17 @@ pub const Outcome = union(enum) {
 /// contents. For NOERROR/no relevant answer, SOA means NODATA while NS without
 /// SOA means referral. An empty Authority section is also NODATA.
 pub fn classify(m: message.Message, q: client.QuestionKey) Error!Outcome {
+    var qname_storage: [name_mod.Name.max_wire_len]u8 = undefined;
+    const qname_wire = try name_mod.writePresentationWire(q.name, &qname_storage);
+    return classifyName(m, try name_mod.Name.init(qname_wire, 0), q.qtype, q.qclass);
+}
+
+/// Wire-name form of `classify`, preserving arbitrary label octets.
+pub fn classifyWire(m: message.Message, q: client.WireQuestionKey) Error!Outcome {
+    return classifyName(m, try name_mod.Name.init(q.name.bytes, 0), q.qtype, q.qclass);
+}
+
+fn classifyName(m: message.Message, qname: name_mod.Name, qtype: types.Type, qclass: types.Class) Error!Outcome {
     if (m.header.flags.truncated) return .truncated;
 
     const rcode = try m.rcode();
@@ -44,28 +55,21 @@ pub fn classify(m: message.Message, q: client.QuestionKey) Error!Outcome {
         else => return .{ .failure = rcode },
     }
 
-    var qname_storage: [name_mod.Name.max_wire_len]u8 = undefined;
-    const qname_wire = try name_mod.writePresentationWire(q.name, &qname_storage);
-    const qname = try name_mod.Name.init(qname_wire, 0);
-
     var cname: ?message.Record = null;
     var dname: ?message.Record = null;
     var answers = try m.records(.answer);
     while (try answers.next()) |rr| {
-        if (rr.class != q.qclass) continue;
+        if (rr.class != qclass) continue;
 
         const owner_matches = try rr.name.eqlIgnoreCase(qname);
-        if (owner_matches and (rr.rr_type == q.qtype or q.qtype == .ANY)) return .answer;
+        if (owner_matches and (rr.rr_type == qtype or qtype == .ANY)) return .answer;
 
-        if (rr.rr_type == .DNAME and q.qtype != .DNAME and !owner_matches and dname == null) {
+        if (rr.rr_type == .DNAME and qtype != .DNAME and !owner_matches and dname == null) {
             if (try qname.isSubdomainOf(rr.name)) dname = rr;
         }
-        if (rr.rr_type == .CNAME and q.qtype != .CNAME and owner_matches and cname == null) cname = rr;
+        if (rr.rr_type == .CNAME and qtype != .CNAME and owner_matches and cname == null) cname = rr;
     }
 
-    // A DNAME response commonly also contains a synthesized CNAME. Preserve
-    // DNAME as the semantic cause so the next resolver layer can validate the
-    // substitution rather than treating the synthesized RR as authoritative.
     if (dname) |rr| return .{ .dname = rr };
     if (cname) |rr| return .{ .cname = rr };
 
@@ -73,7 +77,7 @@ pub fn classify(m: message.Message, q: client.QuestionKey) Error!Outcome {
     var has_ns = false;
     var authority = try m.records(.authority);
     while (try authority.next()) |rr| {
-        if (rr.class != q.qclass) continue;
+        if (rr.class != qclass) continue;
         switch (rr.rr_type) {
             .SOA => has_soa = true,
             .NS => has_ns = true,
@@ -82,7 +86,7 @@ pub fn classify(m: message.Message, q: client.QuestionKey) Error!Outcome {
     }
 
     if (has_ns and !has_soa) {
-        _ = try referral_mod.Referral.init(m, q);
+        _ = try referral_mod.Referral.initName(m, qname, qclass);
         return .referral;
     }
     return .nodata;
@@ -198,6 +202,18 @@ test "class mismatch and unrelated aliases do not fabricate an answer" {
     try b.addNameRecord(.answer, "other.example", .CNAME, 60, "target.example");
     try b.addRawRecord(.answer, "wanted.example", .A, @enumFromInt(3), 60, &.{ 192, 0, 2, 1 });
     try expectTag(.nodata, try classify(try messageFromBuilder(&b), .{ .name = "wanted.example", .qtype = .A }));
+}
+
+test "wire classification preserves arbitrary label octets" {
+    const wire_name = [_]u8{ 3, 'a', 0, 'b', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0 };
+    const qname = try name_mod.Uncompressed.init(&wire_name);
+    var buf: [256]u8 = undefined;
+    var compression: [12]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&buf, &compression, 16, .{ .response = true });
+    try b.addQuestionWire(qname, .A, .IN);
+    try b.addA(.answer, "other.example", 60, .{ 192, 0, 2, 1 });
+    const m = try messageFromBuilder(&b);
+    try expectTag(.nodata, try classifyWire(m, .{ .name = qname, .qtype = .A }));
 }
 
 test "does not classify unrelated authority NS as referral" {

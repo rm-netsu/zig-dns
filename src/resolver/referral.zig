@@ -66,17 +66,25 @@ pub const Referral = struct {
     class: types.Class,
 
     pub fn init(msg: message.Message, q: client.QuestionKey) Error!Referral {
-        if (!msg.header.flags.response or msg.header.flags.opcode != .query or msg.header.flags.truncated) return error.NotReferral;
-        if (try msg.rcode() != .no_error or msg.header.answer_count != 0) return error.NotReferral;
-
         var qwire_buf: [name_mod.Name.max_wire_len]u8 = undefined;
         const qwire = try name_mod.writePresentationWire(q.name, &qwire_buf);
-        const qname = try name_mod.Name.init(qwire, 0);
+        return initName(msg, try name_mod.Name.init(qwire, 0), q.qclass);
+    }
+
+    /// Wire-name form of `init`, suitable for arbitrary-octet labels.
+    pub fn initWire(msg: message.Message, q: client.WireQuestionKey) Error!Referral {
+        return initName(msg, try name_mod.Name.init(q.name.bytes, 0), q.qclass);
+    }
+
+    /// Low-level form used when the caller already has a parsed query name.
+    pub fn initName(msg: message.Message, qname: name_mod.Name, qclass: types.Class) Error!Referral {
+        if (!msg.header.flags.response or msg.header.flags.opcode != .query or msg.header.flags.truncated) return error.NotReferral;
+        if (try msg.rcode() != .no_error or msg.header.answer_count != 0) return error.NotReferral;
 
         var first_ns: ?message.Record = null;
         var authority = try msg.records(.authority);
         while (try authority.next()) |rr| {
-            if (rr.class != q.qclass) continue;
+            if (rr.class != qclass) continue;
             if (rr.rr_type == .SOA) return error.NotReferral;
             if (rr.rr_type != .NS) continue;
 
@@ -90,7 +98,7 @@ pub const Referral = struct {
 
         const first = first_ns orelse return error.NotReferral;
         if (!try qname.isSubdomainOf(first.name)) return error.NotReferral;
-        return .{ .msg = msg, .delegation = first.name, .class = q.qclass };
+        return .{ .msg = msg, .delegation = first.name, .class = qclass };
     }
 
     pub fn nameServers(self: Referral) Error!NameServerIterator {

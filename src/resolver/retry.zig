@@ -74,15 +74,20 @@ pub fn plan(attempt: Attempt, event: Event) Decision {
 /// keeps the FORMERR/OPT distinction out of application code while preserving
 /// caller ownership of the DNS bytes.
 pub fn inspect(m: message.Message, q: client.QuestionKey) response_mod.Error!Response {
-    var has_opt = false;
+    return .{ .outcome = try response_mod.classify(m, q), .has_opt = try hasOpt(m) };
+}
+
+/// Wire-name form of `inspect`, preserving arbitrary label octets.
+pub fn inspectWire(m: message.Message, q: client.WireQuestionKey) response_mod.Error!Response {
+    return .{ .outcome = try response_mod.classifyWire(m, q), .has_opt = try hasOpt(m) };
+}
+
+fn hasOpt(m: message.Message) message.ParseError!bool {
     var additional = try m.records(.additional);
     while (try additional.next()) |rr| {
-        if (rr.rr_type == .OPT) {
-            has_opt = true;
-            break;
-        }
+        if (rr.rr_type == .OPT) return true;
     }
-    return .{ .outcome = try response_mod.classify(m, q), .has_opt = has_opt };
+    return false;
 }
 
 fn planTimeout(attempt: Attempt) Decision {
