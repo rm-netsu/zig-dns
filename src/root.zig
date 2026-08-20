@@ -8,6 +8,7 @@ pub const tcp = @import("tcp.zig");
 pub const client = @import("client.zig");
 pub const validate = @import("validate.zig");
 pub const resolver = @import("resolver.zig");
+pub const cache = @import("cache.zig");
 pub const server = @import("server.zig");
 pub const dnssec = @import("dnssec.zig");
 pub const tsig = @import("tsig.zig");
@@ -47,6 +48,7 @@ test {
     _ = client;
     _ = validate;
     _ = resolver;
+    _ = cache;
     _ = server;
     _ = dnssec;
     _ = tsig;
