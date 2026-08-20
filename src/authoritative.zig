@@ -30,7 +30,12 @@ pub const Options = struct {
     recursion_available: bool = false,
     include_glue: bool = true,
     any_policy: AnyPolicy = .refuse,
+    /// The caller owns signing policy. When true, DO=1 responses require the
+    /// store to provide matching RRSIGs and authenticated denial proofs.
+    signed_zone: bool = false,
 };
+
+pub const ProofKind = enum { nodata, nxdomain, wildcard, insecure_delegation };
 
 pub const Kind = enum {
     answer,
@@ -62,6 +67,8 @@ pub const CoreError = message.ParseError || name_mod.Error || builder.Error || e
     MissingSoa,
     MissingDelegationNs,
     InvalidDname,
+    MissingRrsig,
+    MissingDnssecProof,
 };
 
 const QueryInfo = struct {
@@ -82,6 +89,8 @@ const QueryInfo = struct {
 /// fn findDelegation(*Store, qname: Uncompressed) Error!?Uncompressed
 /// fn findDname(*Store, qname: Uncompressed) Error!?Uncompressed
 /// fn findWildcard(*Store, qname: Uncompressed) Error!?Uncompressed
+/// // Required only when Options.signed_zone can be true:
+/// fn dnssecProof(*Store, kind: ProofKind, qname: Uncompressed, qtype: Type) Error!?RecordIterator
 /// ```
 ///
 /// `findDelegation` returns the nearest zone cut below the apex. `findDname`
@@ -134,6 +143,8 @@ pub fn Composer(comptime Store: type) type {
             else
                 try self.select(qname, qi.question.qtype, qi.question.qclass, options);
 
+            const want_dnssec = options.signed_zone and if (qi.opt) |opt| opt.dnssecOk() else false;
+
             const kind: Kind = switch (selection) {
                 .answer => .answer,
                 .cname => .cname,
@@ -172,11 +183,11 @@ pub fn Composer(comptime Store: type) type {
 
             var truncated = false;
             switch (selection) {
-                .answer => |rrset| truncated = !(try self.emitRrset(&b, rrset, .answer, null, true, options)),
-                .cname => |rrset| truncated = !(try self.emitRrset(&b, rrset, .answer, null, true, options)),
+                .answer => |rrset| truncated = !(try self.emitSignedRrset(&b, rrset, .answer, null, true, want_dnssec, options)),
+                .cname => |rrset| truncated = !(try self.emitSignedRrset(&b, rrset, .answer, null, true, want_dnssec, options)),
                 .dname => |rrset| {
                     const snapshot = b;
-                    if (!(try self.emitRrset(&b, rrset, .answer, null, true, options))) {
+                    if (!(try self.emitSignedRrset(&b, rrset, .answer, null, true, want_dnssec, options))) {
                         truncated = true;
                     } else if (!(try self.emitSynthesizedCname(&b, qname, rrset.first, options))) {
                         b = snapshot;
@@ -184,19 +195,41 @@ pub fn Composer(comptime Store: type) type {
                         truncated = true;
                     }
                 },
-                .wildcard => |w| truncated = !(try self.emitRrset(&b, w.rrset, .answer, qname, true, options)),
+                .wildcard => |w| {
+                    if (!(try self.emitSignedRrset(&b, w.rrset, .answer, qname, true, want_dnssec, options))) {
+                        truncated = true;
+                    } else if (want_dnssec and !(try self.emitProof(&b, .wildcard, qname, qi.question.qtype, options))) {
+                        truncated = true;
+                    }
+                },
                 .referral => |cut| {
                     const ns = (try self.lookupSet(cut, .NS, options.zone_class)) orelse return error.MissingDelegationNs;
                     if (!(try self.emitRrset(&b, ns, .authority, null, true, options))) {
                         truncated = true;
-                    } else if (options.include_glue) {
-                        try self.emitGlue(&b, cut, options);
+                    } else {
+                        if (want_dnssec) {
+                            if (try self.lookupSet(cut, .DS, options.zone_class)) |ds| {
+                                if (!(try self.emitSignedRrset(&b, ds, .authority, null, true, true, options))) truncated = true;
+                            } else if (!(try self.emitProof(&b, .insecure_delegation, qname, qi.question.qtype, options))) {
+                                truncated = true;
+                            }
+                        }
+                        if (!truncated and options.include_glue) try self.emitGlue(&b, cut, options);
                     }
                 },
                 .nodata, .nxdomain => {
                     const apex = self.store.apex();
                     const soa = (try self.lookupSet(apex, .SOA, options.zone_class)) orelse return error.MissingSoa;
-                    truncated = !(try self.emitRrset(&b, soa, .authority, null, true, options));
+                    if (!(try self.emitSignedRrset(&b, soa, .authority, null, true, want_dnssec, options))) {
+                        truncated = true;
+                    } else if (want_dnssec) {
+                        const proof_kind: ProofKind = switch (selection) {
+                            .nodata => .nodata,
+                            .nxdomain => .nxdomain,
+                            else => unreachable,
+                        };
+                        if (!(try self.emitProof(&b, proof_kind, qname, qi.question.qtype, options))) truncated = true;
+                    }
                 },
                 .refused, .not_implemented, .bad_edns_version => {},
             }
@@ -268,6 +301,97 @@ pub fn Composer(comptime Store: type) type {
             const first = (try it.next()) orelse return null;
             try validateStoreRecord(first, owner, rr_type, class);
             return .{ .owner = owner, .rr_type = rr_type, .first = first, .rest = it };
+        }
+
+        fn emitSignedRrset(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, want_dnssec: bool, options: Options) Error!bool {
+            if (!want_dnssec or set.rr_type == .RRSIG) return self.emitRrset(b, set, section, owner_override, required, options);
+
+            const snapshot = b.*;
+            if (!(try self.emitRrset(b, set, section, owner_override, false, options))) {
+                b.* = snapshot;
+                if (required) b.setTruncated(true);
+                return false;
+            }
+            if (!(try self.emitSignatures(b, set.owner, set.rr_type, section, owner_override, options))) {
+                b.* = snapshot;
+                if (required) b.setTruncated(true);
+                return false;
+            }
+            return true;
+        }
+
+        fn emitSignatures(self: *Self, b: *builder.Builder, owner: name_mod.Uncompressed, covered: types.Type, section: types.Section, owner_override: ?name_mod.Uncompressed, options: Options) Error!bool {
+            var it = (try self.store.lookup(owner, .RRSIG)) orelse return error.MissingRrsig;
+            const snapshot = b.*;
+            const output_owner = owner_override orelse owner;
+            var emitted: usize = 0;
+            while (true) {
+                const maybe = it.next() catch |err| {
+                    b.* = snapshot;
+                    return err;
+                };
+                const rr = maybe orelse break;
+                try validateStoreRecord(rr, owner, .RRSIG, options.zone_class);
+                if (rr.rdata.len < 2) {
+                    b.* = snapshot;
+                    return error.StoreContract;
+                }
+                const type_covered: types.Type = @enumFromInt(std.mem.readInt(u16, rr.rdata[0..2], .big));
+                if (type_covered != covered) continue;
+                b.addRawRecordWire(section, output_owner, .RRSIG, rr.class, rr.ttl, rr.rdata) catch |err| switch (err) {
+                    error.NoSpace => {
+                        b.* = snapshot;
+                        return false;
+                    },
+                    else => return err,
+                };
+                emitted += 1;
+            }
+            if (emitted == 0) {
+                b.* = snapshot;
+                return error.MissingRrsig;
+            }
+            return true;
+        }
+
+        fn emitProof(self: *Self, b: *builder.Builder, kind: ProofKind, qname: name_mod.Uncompressed, qtype: types.Type, options: Options) Error!bool {
+            if (comptime !@hasDecl(Store, "dnssecProof")) return error.MissingDnssecProof;
+            var it = (try self.store.dnssecProof(kind, qname, qtype)) orelse return error.MissingDnssecProof;
+            const snapshot = b.*;
+            const apex = self.store.apex();
+            var emitted: usize = 0;
+            while (true) {
+                const maybe = it.next() catch |err| {
+                    b.* = snapshot;
+                    return err;
+                };
+                const rr = maybe orelse break;
+                if (rr.class != options.zone_class or !(try isSubdomain(rr.owner, apex))) {
+                    b.* = snapshot;
+                    return error.StoreContract;
+                }
+                switch (rr.rr_type) {
+                    .NSEC, .NSEC3, .RRSIG => {},
+                    else => {
+                        b.* = snapshot;
+                        return error.StoreContract;
+                    },
+                }
+                b.addRawRecordWire(.authority, rr.owner, rr.rr_type, rr.class, rr.ttl, rr.rdata) catch |err| switch (err) {
+                    error.NoSpace => {
+                        b.* = snapshot;
+                        b.setTruncated(true);
+                        return false;
+                    },
+                    else => return err,
+                };
+                emitted += 1;
+            }
+            if (emitted == 0) {
+                b.* = snapshot;
+                return error.MissingDnssecProof;
+            }
+            return true;
         }
 
         fn emitRrset(self: *Self, b: *builder.Builder, set: PendingRrset, section: types.Section, owner_override: ?name_mod.Uncompressed, required: bool, options: Options) Error!bool {
@@ -460,18 +584,20 @@ const TestStore = struct {
         owner: name_mod.Uncompressed,
         rr_type: types.Type,
         pos: usize = 0,
+        match_all: bool = false,
 
         pub fn next(self: *RecordIterator) Error!?ZoneRecord {
             while (self.pos < self.items.len) {
                 const rr = self.items[self.pos].rr;
                 self.pos += 1;
-                if (rr.rr_type == self.rr_type and (namesEqual(rr.owner, self.owner) catch false)) return rr;
+                if (self.match_all or (rr.rr_type == self.rr_type and (namesEqual(rr.owner, self.owner) catch false))) return rr;
             }
             return null;
         }
     };
 
     items: []const Item,
+    proof_items: []const Item = &.{},
     apex_name: name_mod.Uncompressed,
     delegation: ?name_mod.Uncompressed = null,
     dname_owner: ?name_mod.Uncompressed = null,
@@ -508,6 +634,14 @@ const TestStore = struct {
     pub fn findWildcard(self: *TestStore, qname: name_mod.Uncompressed) Error!?name_mod.Uncompressed {
         _ = qname;
         return self.wildcard_owner;
+    }
+
+    pub fn dnssecProof(self: *TestStore, kind: ProofKind, qname: name_mod.Uncompressed, qtype: types.Type) Error!?RecordIterator {
+        _ = kind;
+        _ = qname;
+        _ = qtype;
+        if (self.proof_items.len == 0) return null;
+        return .{ .items = self.proof_items, .owner = self.apex_name, .rr_type = .NSEC, .match_all = true };
     }
 };
 
@@ -559,6 +693,33 @@ fn soaRdata() [wire("ns.example").len + wire("hostmaster.example").len + 20]u8 {
 }
 
 const soa_rdata = soaRdata();
+
+fn rrsigRdata(comptime covered: types.Type) [18 + apex_wire.len + 64]u8 {
+    var out: [18 + apex_wire.len + 64]u8 = [_]u8{0} ** (18 + apex_wire.len + 64);
+    std.mem.writeInt(u16, out[0..2], @intFromEnum(covered), .big);
+    out[2] = 15; // Ed25519 algorithm number; signature bytes are fixture-only.
+    out[3] = 1;
+    std.mem.writeInt(u32, out[4..8], 300, .big);
+    std.mem.writeInt(u32, out[8..12], 2_000_000_000, .big);
+    std.mem.writeInt(u32, out[12..16], 1_000_000_000, .big);
+    std.mem.writeInt(u16, out[16..18], 0x1234, .big);
+    @memcpy(out[18..][0..apex_wire.len], apex_wire);
+    @memset(out[18 + apex_wire.len ..], 0x5a);
+    return out;
+}
+
+const rrsig_a_rdata = rrsigRdata(.A);
+const rrsig_soa_rdata = rrsigRdata(.SOA);
+const rrsig_nsec_rdata = rrsigRdata(.NSEC);
+const nsec_next_storage = wire("zzz.example");
+const nsec_bitmap = [_]u8{ 0, 6, 0x40, 0, 0, 0, 0, 0x03 };
+fn nsecRdata() [nsec_next_storage.len + nsec_bitmap.len]u8 {
+    var out: [nsec_next_storage.len + nsec_bitmap.len]u8 = undefined;
+    @memcpy(out[0..nsec_next_storage.len], &nsec_next_storage);
+    @memcpy(out[nsec_next_storage.len..], &nsec_bitmap);
+    return out;
+}
+const nsec_rdata = nsecRdata();
 
 const base_items = [_]TestStore.Item{
     .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata } },
@@ -729,6 +890,74 @@ test "authoritative responses remain structurally strict" {
     store.delegation = null;
     const negative = try composer.compose(try makeQuery(&qbuf, &qcomp, "missing.example", .AAAA, true), &out, &comp, .{});
     _ = try validate.messageStrict(try message.Message.init(negative.bytes), .{});
+}
+
+test "authoritative signed responses add matching RRSIG and denial proof only for DO" {
+    const signed_items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 60, .rdata = &rrsig_soa_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = www_wire }, .rr_type = .A, .class = .IN, .ttl = 300, .rdata = &.{ 192, 0, 2, 1 } } },
+        .{ .rr = .{ .owner = .{ .bytes = www_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 300, .rdata = &rrsig_a_rdata } },
+    };
+    const proof_items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .NSEC, .class = .IN, .ttl = 60, .rdata = &nsec_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 60, .rdata = &rrsig_nsec_rdata } },
+    };
+    var store: TestStore = .{ .items = &signed_items, .proof_items = &proof_items, .apex_name = .{ .bytes = apex_wire } };
+    var composer = Composer(TestStore).init(&store);
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [24]builder.CompressionEntry = undefined;
+    var out: [1232]u8 = undefined;
+    var comp: [96]builder.CompressionEntry = undefined;
+
+    var qb = try builder.Builder.init(&qbuf, &qcomp, 0x7001, .{});
+    try qb.addQuestion("www.example", .A, .IN);
+    try qb.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, &.{});
+    const direct = try composer.compose(try message.Message.init(try qb.finish()), &out, &comp, .{ .signed_zone = true });
+    const direct_m = try message.Message.init(direct.bytes);
+    try std.testing.expectEqual(@as(u16, 2), direct_m.header.answer_count);
+    var direct_answers = try direct_m.records(.answer);
+    try std.testing.expectEqual(types.Type.A, (try direct_answers.next()).?.rr_type);
+    try std.testing.expectEqual(types.Type.RRSIG, (try direct_answers.next()).?.rr_type);
+
+    var nxq = try builder.Builder.init(&qbuf, &qcomp, 0x7002, .{});
+    try nxq.addQuestion("missing.example", .A, .IN);
+    try nxq.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, &.{});
+    const negative = try composer.compose(try message.Message.init(try nxq.finish()), &out, &comp, .{ .signed_zone = true });
+    const negative_m = try message.Message.init(negative.bytes);
+    try std.testing.expectEqual(Kind.nxdomain, negative.kind);
+    try std.testing.expectEqual(@as(u16, 4), negative_m.header.authority_count); // SOA, RRSIG(SOA), NSEC, RRSIG(NSEC)
+    _ = try @import("validate.zig").messageStrict(negative_m, .{});
+
+    var no_do_q = try builder.Builder.init(&qbuf, &qcomp, 0x7003, .{});
+    try no_do_q.addQuestion("www.example", .A, .IN);
+    try no_do_q.addOpt(1232, 0, 0, .{}, &.{});
+    const no_do = try composer.compose(try message.Message.init(try no_do_q.finish()), &out, &comp, .{ .signed_zone = true });
+    try std.testing.expectEqual(@as(u16, 1), (try message.Message.init(no_do.bytes)).header.answer_count);
+}
+
+test "authoritative signed zone fails closed when signatures or proofs are unavailable" {
+    var store: TestStore = .{ .items = &base_items, .apex_name = .{ .bytes = apex_wire } };
+    var composer = Composer(TestStore).init(&store);
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [24]builder.CompressionEntry = undefined;
+    var out: [1232]u8 = undefined;
+    var comp: [64]builder.CompressionEntry = undefined;
+
+    var qb = try builder.Builder.init(&qbuf, &qcomp, 0x7010, .{});
+    try qb.addQuestion("www.example", .A, .IN);
+    try qb.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, &.{});
+    try std.testing.expectError(error.MissingRrsig, composer.compose(try message.Message.init(try qb.finish()), &out, &comp, .{ .signed_zone = true }));
+
+    const proofless_items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .RRSIG, .class = .IN, .ttl = 60, .rdata = &rrsig_soa_rdata } },
+    };
+    store.items = &proofless_items;
+    var nxq = try builder.Builder.init(&qbuf, &qcomp, 0x7011, .{});
+    try nxq.addQuestion("missing.example", .A, .IN);
+    try nxq.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, &.{});
+    try std.testing.expectError(error.MissingDnssecProof, composer.compose(try message.Message.init(try nxq.finish()), &out, &comp, .{ .signed_zone = true }));
 }
 
 test "authoritative response honors 512-byte UDP fallback and truncates whole rrset" {
