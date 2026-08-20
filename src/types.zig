@@ -69,6 +69,19 @@ pub const Type = enum(u16) {
     _,
 };
 
+/// True when `rr_type` is usable as ordinary DNS zone/data RRTYPE.
+///
+/// This follows the IANA split used by RFC 6895-family protocols: zero,
+/// OPT, the 128..255 QTYPE/Meta-TYPE range, 61440..65279, and 65535 are
+/// not data RRTYPEs. 65280..65534 remains Private Use and is valid data.
+pub fn isDataRrType(rr_type: Type) bool {
+    const value = @intFromEnum(rr_type);
+    return value != 0 and rr_type != .OPT and
+        !(value >= 128 and value <= 255) and
+        !(value >= 61440 and value <= 65279) and
+        value != 65535;
+}
+
 pub const Class = enum(u16) {
     IN = 1,
     CH = 3,
@@ -168,4 +181,16 @@ test "header round trip" {
     try std.testing.expectEqual(h.id, p.id);
     try std.testing.expect(p.flags.recursion_desired);
     try std.testing.expectEqual(@as(u16, 2), p.answer_count);
+}
+
+test "data RRTYPE classification preserves private use and rejects meta ranges" {
+    try std.testing.expect(isDataRrType(.A));
+    try std.testing.expect(isDataRrType(.HTTPS));
+    try std.testing.expect(isDataRrType(@enumFromInt(65280)));
+    try std.testing.expect(!isDataRrType(@enumFromInt(0)));
+    try std.testing.expect(!isDataRrType(.OPT));
+    try std.testing.expect(!isDataRrType(.NXNAME));
+    try std.testing.expect(!isDataRrType(.ANY));
+    try std.testing.expect(!isDataRrType(@enumFromInt(61440)));
+    try std.testing.expect(!isDataRrType(@enumFromInt(65535)));
 }

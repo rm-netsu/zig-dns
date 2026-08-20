@@ -263,19 +263,7 @@ fn validZoneClass(class: types.Class) bool {
 }
 
 fn requireDataType(rr_type: types.Type) Error!void {
-    const value = @intFromEnum(rr_type);
-
-    // IANA DNS Parameters separates ordinary data RRTYPEs from the
-    // 128..255 QTYPE/Meta-TYPE space. 61440..65279 and 65535 are reserved,
-    // while 65280..65534 is explicitly Private Use and remains valid opaque
-    // zone data. OPT is the one currently-assigned meta-type below 128.
-    if (value == 0 or rr_type == .OPT or
-        (value >= 128 and value <= 255) or
-        (value >= 61440 and value <= 65279) or
-        value == 65535)
-    {
-        return error.InvalidDataType;
-    }
+    if (!types.isDataRrType(rr_type)) return error.InvalidDataType;
 }
 
 fn requireSingleNameType(rr_type: types.Type) Error!void {
