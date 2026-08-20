@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-20
+
+- Add allocation-free RFC 5936 AXFR streaming with first/closing SOA validation, borrowed record events, query builders, premature-EOF detection, and fixed caller-owned state.
+- Add RFC 1995 IXFR semantic events for delete/add deltas, RFC 1982 serial arithmetic, up-to-date responses, multi-delta streams, and AXFR fallback detection.
+- Share canonical SOA snapshots between AXFR/IXFR so transfer state never retains prior DNS message buffers.
+- Add TCP fragmentation coverage at every stream split, 256-message AXFR stress coverage, IXFR mutation replay, premature-EOF tests, and explicit persistent-state budgets.
+- Compose AXFR with RFC 8945 request/continuation TSIG MAC chaining without moving authentication ownership into the transfer core.
+- Extend DoQ stream decoding with explicit query, single-response, and multi-response cardinality so RFC 9250 zone transfers can carry multiple DNS messages before STREAM FIN.
+- Accept omitted Question sections for native incremental IXFR responses while retaining the RFC 5936 first-Question requirement when IXFR falls back to AXFR semantics.
+- Add a compile-checked streaming transfer example, integration documentation, and a ReleaseFast AXFR/IXFR benchmark baseline.
+
 ## 0.3.0 - 2026-08-20
 
 - Add RFC 8945 TSIG parsing, transactional composition, HMAC-SHA1/HMAC-SHA256 authentication, truncation policy, BADTIME helpers, forwarding Original ID handling, and bounded multi-message MAC chaining.

@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.3.0 is the current authenticated-update release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.4.0 is the current streaming zone-transfer release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -167,7 +167,7 @@ Two representations are intentionally available:
 
 ## Scope
 
-Version 0.3.0 includes:
+Version 0.4.0 includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;
@@ -178,6 +178,8 @@ Version 0.3.0 includes:
 - bounded resolver transaction and response-building helpers;
 - TSIG request/response authentication and transfer-ready continuation MAC state;
 - Dynamic UPDATE composition/validation and SOA NOTIFY protocol primitives.
+- allocation-free AXFR/IXFR receivers with semantic events, AXFR fallback, RFC 1982 serial handling, and bounded persistent state;
+- TCP/DoT/DoQ zone-transfer composition, including multi-response DoQ stream framing.
 
 Deliberately outside the protocol core:
 

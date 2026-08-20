@@ -1,6 +1,6 @@
 .{
     .name = .dns,
-    .version = "0.3.0",
+    .version = "0.4.0",
     .fingerprint = 0x82eddc4165c58a26,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},

@@ -58,6 +58,8 @@ The same receiver also recognizes:
 
 Incremental serial transitions, delta origins, the final current SOA, and ambiguous RFC 1982 half-range comparisons are validated before completion is reported.
 
+Native incremental/up-to-date IXFR responses may omit the Question section; if it is present, it is validated. When the response is detected as an AXFR-style fallback, the first response must have carried the IXFR Question because fallback otherwise follows AXFR response semantics.
+
 ## Query composition
 
 AXFR:
