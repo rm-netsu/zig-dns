@@ -22,6 +22,8 @@ For UDP without EDNS the composer observes the 512-byte DNS limit. EDNS request 
 
 Required RRsets are transactional: if a complete RRset does not fit, it is rolled back and `TC=1` is emitted. Optional Additional glue can be dropped without setting `TC`. A response to an EDNS query reserves space for its OPT pseudo-RR before adding ordinary records, so truncation cannot accidentally consume the OPT budget.
 
+`Options.tail_reserve` keeps an additional caller-chosen number of bytes free *inside* the negotiated DNS response limit. This is intended for final caller-owned records such as TSIG: reservation can make an otherwise-fitting RRset truncate, which is preferable to composing an oversized UDP response and discovering the problem only while signing.
+
 EDNS version other than zero produces BADVERS using the extended RCODE field. The response OPT advertises the server payload limit and preserves the request DO bit.
 
 ## DNSSEC
@@ -41,6 +43,6 @@ The proof iterator yields NSEC/NSEC3 and corresponding RRSIG records. Missing si
 
 ## Scope and composition
 
-AXFR/IXFR remain in `dns.transfer`. TSIG authentication remains in `dns.tsig`; authenticate the query before authoritative composition. The current `v0.7.0` development snapshot does not yet provide a high-level in-place signer for an already-finished authoritative response or automatic UDP tail reservation for the TSIG RR, so callers needing TSIG must currently compose those low-level pieces explicitly. Transport ownership stays with the caller.
+AXFR/IXFR remain in `dns.transfer`. TSIG authentication remains in `dns.tsig`: authenticate a query before authoritative composition and sign the finished response afterward. Transport ownership stays with the caller.
 
 `ANY` behavior is explicit. The default refuses ANY to avoid accidental amplification; callers can select one existing RR type through `AnyPolicy.rr_type` as a minimal policy.

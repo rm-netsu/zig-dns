@@ -32,6 +32,34 @@ Time is always injected by the caller. `signBuilder` hashes the unsigned DNS mes
 
 MAC truncation is explicit through `mac_len`. Generated truncation below RFC 8945's protocol minimum is rejected.
 
+### Sign an already-finished message
+
+Composers that return a finished DNS message do not need to reconstruct a `Builder`. Reserve the exact final RR size, compose into the same caller-owned buffer, then append TSIG in place:
+
+```zig
+const sign_options: dns.tsig.auth.SignOptions = .{
+    .time_signed = now,
+    .request_mac = request_tsig.mac,
+};
+const reserve = try dns.tsig.auth.signedRecordWireSize(key, sign_options, true);
+
+// The upstream composer is told to leave `reserve` bytes inside its negotiated
+// DNS response limit.
+const result = try composer.compose(query, &response_buffer, &compression, .{
+    .tail_reserve = reserve,
+});
+
+var signed = try dns.tsig.auth.signInPlace(
+    &response_buffer,
+    result.bytes.len,
+    key,
+    sign_options,
+);
+defer signed.deinit();
+```
+
+`signInPlace` performs capacity, MAC-policy, field-length, and ARCOUNT checks before modifying the finished message. The TSIG RR is encoded uncompressed as the final Additional record, ARCOUNT is updated only after the tail is complete, and the returned `Mac` remains available for response chaining.
+
 ## Verify a request or first response
 
 Run structural validation first so TSIG placement, uniqueness, RDATA bounds, and response-only field semantics have already been checked:

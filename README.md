@@ -179,6 +179,7 @@ Version 0.6.0 includes:
 - DoT/DoH/DoQ protocol adaptation helpers;
 - bounded resolver transaction/response helpers plus response classification, alias processing, referral extraction, cache primitives, and retry planning;
 - a bounded high-level resolver state machine that returns transport/cache/referral/completion actions while leaving I/O, clocks, server addresses, and runtime ownership to the caller;
+- authoritative QUERY response composition over caller-defined zone stores, including wildcard/delegation/glue/negative/DNSSEC semantics and caller-reserved TSIG tails;
 - TSIG request/response authentication and transfer-ready continuation MAC state;
 - Dynamic UPDATE composition/validation and SOA NOTIFY protocol primitives.
 - allocation-free AXFR/IXFR receivers with semantic events, AXFR fallback, RFC 1982 serial handling, and bounded persistent state;
@@ -203,6 +204,7 @@ These can be layered above the wire/core APIs without forcing their resource mod
 - [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/resolver.md`](docs/resolver.md) — response semantics, aliases, referrals/glue, bounded cache primitives, and retry planning.
 - [`docs/high_level_resolver.md`](docs/high_level_resolver.md) — bounded query lifecycle, transport actions, cache/DNSSEC hooks, and referral composition.
+- [`docs/authoritative.md`](docs/authoritative.md) — caller-owned authoritative response composition, DNSSEC proof hooks, truncation, and TSIG reservation.
 - [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
 - [`docs/tsig.md`](docs/tsig.md) — RFC 8945 signing, verification, error semantics, and multi-message chaining.
 - [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and NOTIFY composition/validation.
@@ -217,6 +219,7 @@ zig build check
 zig build example-inspect
 zig build example-resolver
 zig build example-high-level-resolver
+zig build example-authoritative
 zig build example-dnssec
 zig build example-update
 zig build interop-dnssec     # optional: requires dnspython + cryptography
@@ -227,6 +230,7 @@ zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
 zig build bench-resolver -Doptimize=ReleaseFast
 zig build bench-high-level -Doptimize=ReleaseFast
+zig build bench-authoritative -Doptimize=ReleaseFast
 ```
 
 The project targets Zig 0.16.0.

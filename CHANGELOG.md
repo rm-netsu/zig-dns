@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add caller-defined authoritative QUERY response composition for exact answers, CNAME/DNAME, RFC 4592 wildcards, delegations/referrals, glue, DS-at-cut, NODATA/NXDOMAIN, EDNS/BADVERS, explicit ANY policy, and whole-RRset truncation.
+- Add DNSSEC-aware authoritative output with store-provided RRSIG and NSEC/NSEC3 proof hooks that fail closed when a zone declared signed cannot supply required material.
+- Add an allocation-free `SliceStore` reference adapter while keeping production indexing/database ownership outside the protocol core.
+- Add exact caller-owned tail reservation and TSIG in-place signing for already-finished responses, including end-to-end signed authoritative QUERY coverage.
+- Clamp negative-response SOA and covering RRSIG TTLs to `min(SOA TTL, SOA.MINIMUM)` for RFC 2308-compliant negative caching.
+- Add deterministic authoritative response replay, a compile-checked example, and a real-RRset ReleaseFast benchmark baseline.
+
 ## 0.6.0 - 2026-08-20
 
 - Add a bounded caller-owned high-level resolver state machine with generation-safe handles and fixed compile-time query/alias limits.

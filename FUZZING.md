@@ -15,7 +15,8 @@ Current replay coverage includes:
 9. generated IXFR delta streams plus deterministic wire mutation replay through the state machine;
 10. resolver response classification over arbitrary QUERY-shaped packets;
 11. bounded high-level resolver lifecycle replay across slot reuse, retries, mixed transports, valid/malformed responses, and stale handles;
-12. bounded EDNS and RDATA parsing tests in their owning modules.
+12. authoritative query/EDNS/output-cap replay with response strict-validation and deterministic wire mutation;
+13. bounded EDNS and RDATA parsing tests in their owning modules.
 
 Run it with:
 
@@ -37,6 +38,7 @@ For an external fuzzing harness, the best stateless entry points are:
 - `update.validateRequest` over packets with OPCODE=UPDATE.
 - `transfer.axfr.Transfer` / `transfer.ixfr.Transfer` with arbitrary valid-message boundaries and explicit EOF;
 - `resolver.response.classify` followed by alias/referral processing on structurally valid responses;
-- `high_level.Resolver` with deterministic action/event sequences and bounded caller-owned storage.
+- `high_level.Resolver` with deterministic action/event sequences and bounded caller-owned storage;
+- `authoritative.Composer` with arbitrary structurally valid QUERY envelopes, output caps, EDNS sizing, and caller-defined store adapters.
 
 The parser APIs do not allocate, so fuzz harnesses can run them with fixed stack/caller buffers and no allocator noise.
