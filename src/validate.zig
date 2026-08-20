@@ -446,3 +446,34 @@ test "strict validator enforces RFC 10029 response semantics without rejecting e
     try duplicate_response.addOpt(1232, 0, 0, .{}, duplicate_response_options.bytes());
     try std.testing.expectError(error.InvalidMultipleQtype, messageStrict(try message.Message.init(try duplicate_response.finish()), .{}));
 }
+
+test "strict validator enforces EDNS EXPIRE direction and QUERY opcode" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [16]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var request_options = edns.OptionBuilder.init(&option_buf);
+    try request_options.addExpireRequest();
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8601, .{});
+    try query.addQuestion("example.com", .SOA, .IN);
+    try query.addOpt(1232, 0, 0, .{}, request_options.bytes());
+    _ = try messageStrict(try message.Message.init(try query.finish()), .{});
+
+    var update = try builder_mod.Builder.init(&packet, &compression, 0x8602, .{ .opcode = .update });
+    try update.addQuestion("example.com", .SOA, .IN);
+    try update.addOpt(1232, 0, 0, .{}, request_options.bytes());
+    try std.testing.expectError(error.InvalidExpire, messageStrict(try message.Message.init(try update.finish()), .{}));
+
+    var response_options = edns.OptionBuilder.init(&option_buf);
+    try response_options.addExpireResponse(3600);
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8603, .{ .response = true, .authoritative = true });
+    try response.addQuestion("example.com", .SOA, .IN);
+    try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
+    _ = try messageStrict(try message.Message.init(try response.finish()), .{});
+
+    var wrong_direction = try builder_mod.Builder.init(&packet, &compression, 0x8604, .{});
+    try wrong_direction.addQuestion("example.com", .SOA, .IN);
+    try wrong_direction.addOpt(1232, 0, 0, .{}, response_options.bytes());
+    try std.testing.expectError(error.InvalidExpire, messageStrict(try message.Message.init(try wrong_direction.finish()), .{}));
+}

@@ -7,6 +7,7 @@ const ede_mod = @import("edns/ede.zig");
 const update_lease_mod = @import("edns/update_lease.zig");
 const zoneversion_mod = @import("edns/zoneversion.zig");
 const mqtype_mod = @import("edns/mqtype.zig");
+const expire_mod = @import("edns/expire.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -14,9 +15,10 @@ pub const ede = ede_mod;
 pub const update_lease = update_lease_mod;
 pub const zoneversion = zoneversion_mod;
 pub const mqtype = mqtype_mod;
+pub const expire = expire_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -79,6 +81,12 @@ pub const Iterator = struct {
         return .{ .code = code, .data = data };
     }
 };
+
+pub const Expire = expire_mod.Expire;
+pub fn parseExpire(opt: Option) Error!Expire {
+    if (opt.code != .EXPIRE) return error.InvalidOption;
+    return expire_mod.parse(opt.data) catch error.InvalidExpire;
+}
 
 pub const Cookie = cookie_mod.Cookie;
 pub fn parseCookie(opt: Option) Error!Cookie {
@@ -146,6 +154,13 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
         .UPDATE_LEASE => _ = try parseUpdateLease(opt),
         .ECS => _ = try clientSubnet(opt),
+        .EXPIRE => {
+            const value = try parseExpire(opt);
+            switch (value) {
+                .request => if (response) return error.InvalidExpire,
+                .remaining_seconds => if (!response) return error.InvalidExpire,
+            }
+        },
         .COOKIE => _ = try parseCookie(opt),
         .KEEPALIVE => {
             const value = try parseKeepalive(opt);
@@ -187,6 +202,7 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
     var seen_mqtype_response = false;
     while (try iterator.next()) |option| {
         switch (option.code) {
+            .EXPIRE => if (opcode != .query) return error.InvalidExpire,
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
             .ZONEVERSION => {
                 if (opcode != .query) return error.InvalidZoneVersion;
@@ -325,6 +341,19 @@ pub const OptionBuilder = struct {
         @memcpy(self.out[self.pos + 4 ..][0..data.len], data);
         self.pos += 4 + data.len;
     }
+    pub fn addExpireRequest(self: *OptionBuilder) error{NoSpace}!void {
+        try self.add(.EXPIRE, &.{});
+    }
+
+    pub fn addExpireResponse(self: *OptionBuilder, remaining_seconds: u32) error{NoSpace}!void {
+        if (self.pos + 8 > self.out.len) return error.NoSpace;
+        const start = self.pos;
+        std.mem.writeInt(u16, self.out[start..][0..2], @intFromEnum(OptionCode.EXPIRE), .big);
+        std.mem.writeInt(u16, self.out[start + 2 ..][0..2], 4, .big);
+        std.mem.writeInt(u32, self.out[start + 4 ..][0..4], remaining_seconds, .big);
+        self.pos += 8;
+    }
+
     pub fn addUpdateLease(self: *OptionBuilder, value: UpdateLease) error{NoSpace}!void {
         var payload: [8]u8 = undefined;
         const wire = try update_lease_mod.write(value, &payload);
@@ -582,4 +611,16 @@ test "MQTYPE builders reject invalid and duplicate caller lists transactionally"
 
     // RFC 10029 explicitly permits an empty MQTYPE-Response list.
     try builder.addMultipleQtypeResponse(.A, &.{});
+}
+
+test "EDNS EXPIRE typed builders preserve query response direction" {
+    var bytes: [32]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addExpireRequest();
+    try builder.addExpireResponse(86_400);
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    try std.testing.expectEqual(Expire.request, try parseExpire((try it.next()).?));
+    const response = try parseExpire((try it.next()).?);
+    try std.testing.expectEqual(@as(u32, 86_400), response.remaining_seconds);
 }
