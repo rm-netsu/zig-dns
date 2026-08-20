@@ -6,13 +6,17 @@ const rdata = @import("rdata.zig");
 const edns = @import("edns.zig");
 const dnssec = @import("dnssec.zig");
 const svcb_mod = @import("svcb.zig");
+const tsig_mod = @import("tsig.zig");
 
-pub const Error = message.ParseError || rdata.Error || edns.Error || dnssec.Error || svcb_mod.Error || error{
+pub const Error = message.ParseError || rdata.Error || edns.Error || dnssec.Error || svcb_mod.Error || tsig_mod.Error || error{
     OptOutsideAdditional,
     MultipleOpt,
     InvalidOptOwner,
     UnsupportedEdnsVersion,
     InvalidRdata,
+    TsigOutsideAdditional,
+    MultipleTsig,
+    TsigNotLast,
 };
 
 pub const Options = struct {
@@ -22,6 +26,7 @@ pub const Options = struct {
 
 pub const Result = struct {
     opt: ?edns.Opt = null,
+    tsig: ?tsig_mod.Record = null,
 };
 
 pub fn messageStrict(m: message.Message, options: Options) Error!Result {
@@ -31,11 +36,13 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
     var answers = try m.records(.answer);
     while (try answers.next()) |rr| {
         if (rr.rr_type == .OPT) return error.OptOutsideAdditional;
+        if (rr.rr_type == .TSIG) return error.TsigOutsideAdditional;
         if (options.validate_known_rdata) try knownRdata(rr);
     }
     var authority = try m.records(.authority);
     while (try authority.next()) |rr| {
         if (rr.rr_type == .OPT) return error.OptOutsideAdditional;
+        if (rr.rr_type == .TSIG) return error.TsigOutsideAdditional;
         if (options.validate_known_rdata) try knownRdata(rr);
     }
     var additional = try m.records(.additional);
@@ -50,6 +57,12 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             var oi = opt.iterator();
             while (try oi.next()) |_| {}
             result.opt = opt;
+        } else if (rr.rr_type == .TSIG) {
+            if (result.tsig != null) return error.MultipleTsig;
+            const parsed = try tsig_mod.parse(rr);
+            try tsig_mod.validateSemantics(parsed, m.header.flags.response);
+            result.tsig = parsed;
+            if (additional.remaining != 0) return error.TsigNotLast;
         } else if (options.validate_known_rdata) try knownRdata(rr);
     }
     return result;
@@ -105,6 +118,7 @@ pub fn knownRdata(rr: message.Record) Error!void {
         .NSEC3PARAM => _ = try dnssec.nsec3param(rr),
         .TLSA, .SMIMEA => _ = try rdata.tlsa(rr),
         .SVCB, .HTTPS => _ = try svcb_mod.validateRecord(rr),
+        .TSIG => _ = try tsig_mod.parse(rr),
         else => {},
     }
 }

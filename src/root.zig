@@ -10,6 +10,7 @@ pub const validate = @import("validate.zig");
 pub const resolver = @import("resolver.zig");
 pub const server = @import("server.zig");
 pub const dnssec = @import("dnssec.zig");
+pub const tsig = @import("tsig.zig");
 pub const svcb = @import("svcb.zig");
 pub const udp = @import("udp.zig");
 pub const dot = @import("dot.zig");
@@ -45,6 +46,7 @@ test {
     _ = resolver;
     _ = server;
     _ = dnssec;
+    _ = tsig;
     _ = svcb;
     _ = udp;
     _ = dot;
