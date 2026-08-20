@@ -216,6 +216,7 @@ zig build interop-tsig       # optional: requires dnspython
 zig build interop-update     # optional: requires dnspython
 zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
+zig build bench-transfer -Doptimize=ReleaseFast
 ```
 
 The project targets Zig 0.16.0.

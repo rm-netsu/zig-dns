@@ -82,6 +82,17 @@ pub fn build(b: *std.Build) void {
     const dnssec_bench_step = b.step("bench-dnssec", "Benchmark DNSSEC hot paths");
     dnssec_bench_step.dependOn(&b.addRunArtifact(dnssec_bench).step);
 
+    const transfer_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/transfer.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const transfer_bench = b.addExecutable(.{ .name = "dns-transfer-bench", .root_module = transfer_bench_mod });
+    check.dependOn(&transfer_bench.step);
+    const transfer_bench_step = b.step("bench-transfer", "Benchmark AXFR and IXFR state machines");
+    transfer_bench_step.dependOn(&b.addRunArtifact(transfer_bench).step);
+
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);

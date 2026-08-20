@@ -8,6 +8,7 @@ Run the benchmarks with Zig 0.16.0:
 ```bash
 zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
+zig build bench-transfer -Doptimize=ReleaseFast
 ```
 
 The benchmark roots are also compiled by `zig build check` so API changes
@@ -53,6 +54,26 @@ paths do not request an allocator.
 
 NSEC3 cost scales with the record's iteration count. The API therefore keeps
 the validation limit caller-owned instead of hiding an unbounded CPU policy.
+
+## 0.4.0 transfer baseline
+
+AXFR/IXFR state machines are new in 0.4.0, so there is no meaningful A/B
+comparison with v0.3.0. Five ReleaseFast runs were sampled on the same x86_64
+Linux project environment; the table reports median latency:
+
+| Operation | Median | Persistent storage |
+| --- | ---: | ---: |
+| single-message AXFR, 4 ordinary RRs | 1,470 ns/op | 765 B |
+| one-delta IXFR, 1 delete + 1 add | 1,973 ns/op | 1,275 B |
+
+The corresponding `Transfer` descriptors are 56 B for AXFR and 104 B for
+IXFR. The benchmark performs parsing/state transitions but no socket I/O,
+heap allocation, zone-store writes, or TSIG cryptography.
+
+Separate stress tests feed 256 AXFR DNS messages through the same fixed
+storage and replay generated IXFR delta streams. The state size is therefore
+independent of transfer message count and zone size; only the caller's current
+DNS message buffer and destination zone store scale with data volume.
 
 ## Benchmark policy
 
