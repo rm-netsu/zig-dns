@@ -264,7 +264,16 @@ fn validZoneClass(class: types.Class) bool {
 
 fn requireDataType(rr_type: types.Type) Error!void {
     const value = @intFromEnum(rr_type);
-    if (value == 0 or rr_type == .OPT or rr_type == .TKEY or rr_type == .TSIG or rr_type == .IXFR or rr_type == .AXFR or rr_type == .ANY or value == 253 or value == 254) {
+
+    // IANA DNS Parameters separates ordinary data RRTYPEs from the
+    // 128..255 QTYPE/Meta-TYPE space. 61440..65279 and 65535 are reserved,
+    // while 65280..65534 is explicitly Private Use and remains valid opaque
+    // zone data. OPT is the one currently-assigned meta-type below 128.
+    if (value == 0 or rr_type == .OPT or
+        (value >= 128 and value <= 255) or
+        (value >= 61440 and value <= 65279) or
+        value == 65535)
+    {
         return error.InvalidDataType;
     }
 }
@@ -370,6 +379,56 @@ test "UPDATE prescan rejects out-of-zone wire records" {
     try b.addQuestion("example.com", .SOA, .IN);
     try b.addRawRecord(.authority, "example.net", .A, .IN, 60, &.{ 192, 0, 2, 1 });
     try std.testing.expectError(error.NotZone, validateRequest(try message.Message.init(try b.finish())));
+}
+
+test "UPDATE rejects meta and reserved type ranges transactionally" {
+    const invalid_types = [_]types.Type{
+        .NXNAME,
+        @enumFromInt(200),
+        @enumFromInt(61440),
+        @enumFromInt(65535),
+    };
+
+    for (invalid_types) |rr_type| {
+        var packet: [512]u8 = undefined;
+        var compression: [16]builder_mod.CompressionEntry = undefined;
+        var u = try Composer.init(&packet, &compression, 16, "example.com", .IN);
+        const before_pos = u.builder.pos;
+        const before_compression = u.builder.compression_len;
+        try std.testing.expectError(error.InvalidDataType, u.add("host.example.com", rr_type, 60, &.{}));
+        try std.testing.expectEqual(before_pos, u.builder.pos);
+        try std.testing.expectEqual(before_compression, u.builder.compression_len);
+        try std.testing.expectEqual(@as(u16, 0), u.builder.header.authority_count);
+    }
+}
+
+test "UPDATE prescan rejects meta and reserved type ranges" {
+    const invalid_types = [_]types.Type{
+        .NXNAME,
+        @enumFromInt(200),
+        @enumFromInt(61440),
+        @enumFromInt(65535),
+    };
+
+    for (invalid_types) |rr_type| {
+        var packet: [512]u8 = undefined;
+        var compression: [16]builder_mod.CompressionEntry = undefined;
+        var b = try builder_mod.Builder.init(&packet, &compression, 17, .{ .opcode = .update });
+        try b.addQuestion("example.com", .SOA, .IN);
+        try b.addRawRecord(.authority, "host.example.com", rr_type, .IN, 60, &.{});
+        try std.testing.expectError(error.InvalidUpdate, validateRequest(try message.Message.init(try b.finish())));
+    }
+}
+
+test "UPDATE accepts unknown ordinary and private-use data types" {
+    const data_types = [_]types.Type{ @enumFromInt(258), @enumFromInt(60000), @enumFromInt(65400) };
+    for (data_types) |rr_type| {
+        var packet: [512]u8 = undefined;
+        var compression: [16]builder_mod.CompressionEntry = undefined;
+        var u = try Composer.init(&packet, &compression, 18, "example.com", .IN);
+        try u.add("future.example.com", rr_type, 60, &.{ 0xde, 0xad });
+        _ = try validateRequest(try message.Message.init(try u.finish()));
+    }
 }
 
 test "UPDATE preserves RFC 3597 unknown data types" {
