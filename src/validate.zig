@@ -37,13 +37,13 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
     while (try answers.next()) |rr| {
         if (rr.rr_type == .OPT) return error.OptOutsideAdditional;
         if (rr.rr_type == .TSIG) return error.TsigOutsideAdditional;
-        if (options.validate_known_rdata) try knownRdata(rr);
+        if (options.validate_known_rdata and shouldValidateKnownRdata(m.header.flags.opcode, .answer, rr)) try knownRdata(rr);
     }
     var authority = try m.records(.authority);
     while (try authority.next()) |rr| {
         if (rr.rr_type == .OPT) return error.OptOutsideAdditional;
         if (rr.rr_type == .TSIG) return error.TsigOutsideAdditional;
-        if (options.validate_known_rdata) try knownRdata(rr);
+        if (options.validate_known_rdata and shouldValidateKnownRdata(m.header.flags.opcode, .authority, rr)) try knownRdata(rr);
     }
     var additional = try m.records(.additional);
     while (try additional.next()) |rr| {
@@ -66,6 +66,19 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
         } else if (options.validate_known_rdata) try knownRdata(rr);
     }
     return result;
+}
+
+fn shouldValidateKnownRdata(opcode: types.Opcode, section: types.Section, rr: message.Record) bool {
+    if (opcode != .update) return true;
+
+    // RFC 2136 overloads CLASS and RDLENGTH in the Prerequisite and Update
+    // sections. ANY records there intentionally carry empty RDATA, and NONE
+    // prerequisites do too; parsing those bytes as the ordinary RR type
+    // would reject valid UPDATE messages. NONE records in the Update section
+    // are value-dependent deletions and still contain normal RDATA.
+    if (rr.class == .ANY) return false;
+    if (section == .answer and rr.class == .NONE) return false;
+    return true;
 }
 
 pub fn knownRdata(rr: message.Record) Error!void {
@@ -136,4 +149,19 @@ test "strict validator accepts EDNS and rejects duplicate OPT" {
     const v = try messageStrict(m, .{});
     try std.testing.expect(v.opt.?.dnssecOk());
     try std.testing.expect(v.opt.?.compactAnswersOk());
+}
+
+test "strict validator accepts RFC 2136 meta-record RDATA semantics" {
+    const update_mod = @import("update.zig");
+    const builder_mod = @import("builder.zig");
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var update = try update_mod.Composer.init(&packet, &compression, 0x99, "example.com", .IN);
+    try update.requireRrsetNotExists("host.example.com", .AAAA);
+    try update.deleteRrset("host.example.com", .TXT);
+    try update.deleteA("stale.example.com", .{ 192, 0, 2, 9 });
+
+    const m = try message.Message.init(try update.finish());
+    _ = try messageStrict(m, .{});
+    _ = try update_mod.validateRequest(m);
 }
