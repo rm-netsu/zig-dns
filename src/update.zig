@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const message = @import("message.zig");
+const name_mod = @import("name.zig");
 const builder_mod = @import("builder.zig");
 
 pub const Error = builder_mod.Error || message.ParseError || error{
@@ -11,6 +12,7 @@ pub const Error = builder_mod.Error || message.ParseError || error{
     InvalidDataType,
     InvalidPrerequisite,
     InvalidUpdate,
+    NotZone,
 };
 
 /// RFC 2136 UPDATE request composer. It owns no allocation and wraps the
@@ -40,20 +42,24 @@ pub const Composer = struct {
     // ----- Prerequisites -------------------------------------------------
 
     pub fn requireNameExists(self: *Composer, owner: []const u8) Error!void {
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.answer, owner, .ANY, .ANY, 0, &.{});
     }
 
     pub fn requireNameNotExists(self: *Composer, owner: []const u8) Error!void {
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.answer, owner, .ANY, .NONE, 0, &.{});
     }
 
     pub fn requireRrsetExists(self: *Composer, owner: []const u8, rr_type: types.Type) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.answer, owner, rr_type, .ANY, 0, &.{});
     }
 
     pub fn requireRrsetNotExists(self: *Composer, owner: []const u8, rr_type: types.Type) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.answer, owner, rr_type, .NONE, 0, &.{});
     }
 
@@ -61,6 +67,7 @@ pub const Composer = struct {
     /// for every member that must match the zone RRset exactly.
     pub fn requireRecordExists(self: *Composer, owner: []const u8, rr_type: types.Type, rdata: []const u8) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.answer, owner, rr_type, self.zone_class, 0, rdata);
     }
 
@@ -68,20 +75,24 @@ pub const Composer = struct {
 
     pub fn add(self: *Composer, owner: []const u8, rr_type: types.Type, ttl: u32, rdata: []const u8) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.authority, owner, rr_type, self.zone_class, ttl, rdata);
     }
 
     pub fn deleteName(self: *Composer, owner: []const u8) Error!void {
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.authority, owner, .ANY, .ANY, 0, &.{});
     }
 
     pub fn deleteRrset(self: *Composer, owner: []const u8, rr_type: types.Type) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.authority, owner, rr_type, .ANY, 0, &.{});
     }
 
     pub fn deleteRecord(self: *Composer, owner: []const u8, rr_type: types.Type, rdata: []const u8) Error!void {
         try requireDataType(rr_type);
+        try self.requireOwnerInZone(owner);
         try self.builder.addRawRecord(.authority, owner, rr_type, .NONE, 0, rdata);
     }
 
@@ -113,6 +124,7 @@ pub const Composer = struct {
 
     pub fn addNameRecord(self: *Composer, owner: []const u8, rr_type: types.Type, ttl: u32, target: []const u8) Error!void {
         try requireSingleNameType(rr_type);
+        try self.requireOwnerInZone(owner);
         var w = try self.builder.beginRecord(.authority, owner, rr_type, self.zone_class, ttl);
         errdefer w.abort();
         try w.writeName(target);
@@ -121,6 +133,7 @@ pub const Composer = struct {
 
     pub fn deleteNameRecord(self: *Composer, owner: []const u8, rr_type: types.Type, target: []const u8) Error!void {
         try requireSingleNameType(rr_type);
+        try self.requireOwnerInZone(owner);
         var w = try self.builder.beginRecord(.authority, owner, rr_type, .NONE, 0);
         errdefer w.abort();
         try w.writeName(target);
@@ -129,6 +142,7 @@ pub const Composer = struct {
 
     pub fn requireNameRecord(self: *Composer, owner: []const u8, rr_type: types.Type, target: []const u8) Error!void {
         try requireSingleNameType(rr_type);
+        try self.requireOwnerInZone(owner);
         var w = try self.builder.beginRecord(.answer, owner, rr_type, self.zone_class, 0);
         errdefer w.abort();
         try w.writeName(target);
@@ -147,7 +161,16 @@ pub const Composer = struct {
         try self.writeMx(.answer, owner, self.zone_class, 0, preference, exchange);
     }
 
+    fn requireOwnerInZone(self: *Composer, owner: []const u8) Error!void {
+        var owner_wire_buf: [name_mod.Name.max_wire_len]u8 = undefined;
+        const owner_wire = try name_mod.writePresentationWire(owner, &owner_wire_buf);
+        const owner_name = try name_mod.Name.init(owner_wire, 0);
+        const zone_name = try name_mod.Name.init(self.builder.out, types.Header.wire_len);
+        if (!(try owner_name.isSubdomainOf(zone_name))) return error.NotZone;
+    }
+
     fn writeMx(self: *Composer, section: types.Section, owner: []const u8, class: types.Class, ttl: u32, preference: u16, exchange: []const u8) Error!void {
+        try self.requireOwnerInZone(owner);
         var w = try self.builder.beginRecord(section, owner, .MX, class, ttl);
         errdefer w.abort();
         try w.writeU16(preference);
@@ -186,10 +209,16 @@ pub fn validateRequest(m: message.Message) Error!Request {
     if (try questions.next() != null) return error.InvalidZoneSection;
 
     var prerequisites = try m.records(.answer);
-    while (try prerequisites.next()) |rr| try validatePrerequisite(rr, zone.qclass);
+    while (try prerequisites.next()) |rr| {
+        if (!(try rr.name.isSubdomainOf(zone.name))) return error.NotZone;
+        try validatePrerequisite(rr, zone.qclass);
+    }
 
     var updates = try m.records(.authority);
-    while (try updates.next()) |rr| try validateUpdate(rr, zone.qclass);
+    while (try updates.next()) |rr| {
+        if (!(try rr.name.isSubdomainOf(zone.name))) return error.NotZone;
+        try validateUpdate(rr, zone.qclass);
+    }
 
     // Fully walk Additional and reject trailing bytes, while leaving extension
     // semantics (OPT/TSIG/etc.) to their dedicated validators.
@@ -320,4 +349,36 @@ test "UPDATE typed name and MX values remain structurally valid" {
     const m = try message.Message.init(try u.finish());
     _ = try validateRequest(m);
     try m.validate();
+}
+
+test "UPDATE rejects out-of-zone owners before mutation" {
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var u = try Composer.init(&packet, &compression, 13, "example.com", .IN);
+    const before_pos = u.builder.pos;
+    const before_compression = u.builder.compression_len;
+    try std.testing.expectError(error.NotZone, u.addA("example.net", 60, .{ 192, 0, 2, 1 }));
+    try std.testing.expectEqual(before_pos, u.builder.pos);
+    try std.testing.expectEqual(before_compression, u.builder.compression_len);
+    try std.testing.expectEqual(@as(u16, 0), u.builder.header.authority_count);
+}
+
+test "UPDATE prescan rejects out-of-zone wire records" {
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var b = try builder_mod.Builder.init(&packet, &compression, 14, .{ .opcode = .update });
+    try b.addQuestion("example.com", .SOA, .IN);
+    try b.addRawRecord(.authority, "example.net", .A, .IN, 60, &.{ 192, 0, 2, 1 });
+    try std.testing.expectError(error.NotZone, validateRequest(try message.Message.init(try b.finish())));
+}
+
+test "UPDATE preserves RFC 3597 unknown data types" {
+    const future_type: types.Type = @enumFromInt(65400);
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var u = try Composer.init(&packet, &compression, 15, "example.com", .IN);
+    try u.requireRrsetNotExists("future.example.com", future_type);
+    try u.add("future.example.com", future_type, 60, &.{ 0xde, 0xad, 0xbe, 0xef });
+    const m = try message.Message.init(try u.finish());
+    _ = try validateRequest(m);
 }

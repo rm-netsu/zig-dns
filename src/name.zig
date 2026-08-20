@@ -91,6 +91,32 @@ pub const Name = struct {
         const b = try other.writeCanonicalWire(&b_buf);
         return canonicalWireOrder(a, b);
     }
+
+    /// Return whether this name is equal to or below `zone` in the DNS tree.
+    /// Comparison follows normal case-insensitive DNS label semantics and does
+    /// not confuse a byte suffix (e.g. badexample.com) with a label suffix.
+    pub fn isSubdomainOf(self: Name, zone: Name) Error!bool {
+        var name_buf: [max_wire_len]u8 = undefined;
+        var zone_buf: [max_wire_len]u8 = undefined;
+        const name_wire = try self.writeCanonicalWire(&name_buf);
+        const zone_wire = try zone.writeCanonicalWire(&zone_buf);
+
+        var name_offsets: [127]u8 = undefined;
+        var zone_offsets: [127]u8 = undefined;
+        const name_count = labelOffsets(name_wire, &name_offsets);
+        const zone_count = labelOffsets(zone_wire, &zone_offsets);
+        if (name_count < zone_count) return false;
+
+        for (0..zone_count) |depth| {
+            const name_off: usize = name_offsets[name_count - 1 - depth];
+            const zone_off: usize = zone_offsets[zone_count - 1 - depth];
+            const name_len: usize = name_wire[name_off];
+            const zone_len: usize = zone_wire[zone_off];
+            if (name_len != zone_len) return false;
+            if (!std.mem.eql(u8, name_wire[name_off + 1 ..][0..name_len], zone_wire[zone_off + 1 ..][0..zone_len])) return false;
+        }
+        return true;
+    }
 };
 
 fn canonicalWireOrder(a: []const u8, b: []const u8) std.math.Order {
@@ -339,4 +365,20 @@ test "canonical DNS name order expands compression and folds ASCII case" {
     const b = try Name.init(&packet, 9);
     const a = try Name.init(&packet, 13);
     try std.testing.expectEqual(std.math.Order.lt, try a.canonicalCompare(b));
+}
+
+test "subdomain comparison respects DNS label boundaries" {
+    const child_wire = [_]u8{ 3, 'W', 'W', 'W', 7, 'E', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0 };
+    const zone_wire = [_]u8{ 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'C', 'O', 'M', 0 };
+    const sibling_wire = [_]u8{ 10, 'b', 'a', 'd', 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0 };
+    const root_wire = [_]u8{0};
+    const child = try Name.init(&child_wire, 0);
+    const zone = try Name.init(&zone_wire, 0);
+    const sibling = try Name.init(&sibling_wire, 0);
+    const root = try Name.init(&root_wire, 0);
+    try std.testing.expect(try child.isSubdomainOf(zone));
+    try std.testing.expect(try zone.isSubdomainOf(zone));
+    try std.testing.expect(!(try sibling.isSubdomainOf(zone)));
+    try std.testing.expect(try child.isSubdomainOf(root));
+    try std.testing.expect(!(try zone.isSubdomainOf(child)));
 }
