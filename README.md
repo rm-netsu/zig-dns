@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.7.0 is the current authoritative-composition release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.8.0 is the current operational-protocol release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 

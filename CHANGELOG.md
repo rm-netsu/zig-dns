@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-08-20
+
 - Expand operational EDNS support with RFC 6975 DAU/DHU/N3U, RFC 7901 CHAIN, RFC 8145 Key Tag signaling, RFC 7873/RFC 9018 DNS Cookies, RFC 7828 TCP Keepalive, RFC 5001 NSID, RFC 7314 EXPIRE, RFC 9567 Report-Channel, RFC 9660 ZONEVERSION, RFC 9664 Update Lease, and RFC 10029 Multiple-QTYPE typed parsing/building.
 - Add typed Extended DNS Error diagnostics with unknown-code preservation and strict UTF-8 handling without turning EDE metadata into resolver policy.
 - Add RFC 9606 RESINFO (TYPE 261) parsing/building with borrowed DNS-SD attributes, forward-compatible keys, typed EDE-range iteration, HTTPS `infourl` validation, and transactional message construction.
