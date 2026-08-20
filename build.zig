@@ -86,6 +86,17 @@ pub fn build(b: *std.Build) void {
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);
 
+    const update_example_mod = b.createModule(.{
+        .root_source_file = b.path("examples/update.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const update_example = b.addExecutable(.{ .name = "dns-update-example", .root_module = update_example_mod });
+    check.dependOn(&update_example.step);
+    const update_example_step = b.step("example-update", "Run the signed DNS UPDATE example");
+    update_example_step.dependOn(&b.addRunArtifact(update_example).step);
+
     const tsig_fixture_mod = b.createModule(.{
         .root_source_file = b.path("interop/tsig_fixture.zig"),
         .target = target,
@@ -99,4 +110,17 @@ pub fn build(b: *std.Build) void {
     const run_tsig_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/tsig_vectors.py") });
     run_tsig_interop.addArtifactArg(tsig_fixture);
     interop_tsig.dependOn(&run_tsig_interop.step);
+    const update_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("interop/update_fixture.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const update_fixture = b.addExecutable(.{ .name = "dns-update-interop-fixture", .root_module = update_fixture_mod });
+    check.dependOn(&update_fixture.step);
+
+    const interop_update = b.step("interop-update", "Validate signed UPDATE with dnspython");
+    const run_update_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/update_vectors.py") });
+    run_update_interop.addArtifactArg(update_fixture);
+    interop_update.dependOn(&run_update_interop.step);
 }
