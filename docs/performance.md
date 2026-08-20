@@ -219,6 +219,35 @@ The TSIG workload includes the response HMAC and secure-zeroing the returned MAC
 
 Raw samples are retained in `bench/results/authoritative-v0.7.0-2026-08-20.json`.
 
+## 0.8.0 operational EDNS regression review
+
+The operational EDNS work is mostly outside the existing core fast paths, but
+strict validation now performs additional typed option/context checks. A
+16-round interleaved ReleaseFast A/B review compiled the same real-data core
+benchmark source (hash `23c4a01c33`) with Zig 0.16.0 against `v0.7.0`
+(`63000a96d176`) and the operational-EDNS candidate `38e2a6c164b7`. Processes
+were pinned to CPU 4. Paired throughput deltas were:
+
+| Existing core workload | 0.8 candidate vs v0.7.0 paired median | paired MAD |
+| --- | ---: | ---: |
+| parse real corpus | -0.31% | 2.30 pp |
+| strict validate | +0.36% | 1.58 pp |
+| parse + materialize names | -0.13% | 3.69 pp |
+| build real corpus | -0.64% | 1.89 pp |
+
+None of the paired deltas exceeds the observed paired spread, so this is
+classified as **no confirmed core regression**. The first eight-round batch
+showed an apparent builder slowdown, but the second independently ordered batch
+did not reproduce it; the merged result is therefore used rather than treating
+a short noisy run as a regression. The benchmark binaries were 4,078,736 bytes
+for `v0.7.0` and 4,104,672 bytes for the candidate (+25,936 bytes, +0.64%); the
+change is small and includes the newly reachable operational EDNS APIs. No new
+persistent runtime state or allocator ownership is introduced by the added
+NSID, Padding, or Report-Channel helpers.
+
+Raw samples and exact resolved revisions are retained in
+`bench/results/core-real-corpus-v0.7.0-v0.8.0-dev-2026-08-20.json`.
+
 ## Benchmark policy
 
 Before accepting a hot-path optimization:

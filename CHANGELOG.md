@@ -8,6 +8,7 @@
 - Validate operational EDNS message semantics in one OPT pass and extend deterministic arbitrary-payload/generated round-trip replay.
 - Fix RFC 9018 client-address lifetime handling that could produce incorrect Server Cookie SipHash results in optimized builds.
 - Preserve resolved git revisions in real-corpus A/B benchmark output so later result merges cannot silently compare different HEAD commits.
+- Re-run a 16-round real-corpus ReleaseFast A/B review against v0.7.0; no parser/validator/name/builder regression is confirmed beyond observed paired-run spread.
 
 ## 0.7.0 - 2026-08-20
 
