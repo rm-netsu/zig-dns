@@ -16,7 +16,7 @@ Version 0.7.0 is the current authoritative-composition release. The public API i
 - arbitrary-octet domain names through uncompressed wire-name APIs;
 - transactional builder operations that roll back after local write failures;
 - typed helpers for common RRs and raw passthrough for every unknown RR type;
-- EDNS(0), extended RCODEs, ECS, EDE, padding, DNSSEC OK and Compact Answers OK flags;
+- EDNS(0), extended RCODEs, ECS, EDE, DNS Cookies, TCP Keepalive, NSID, EXPIRE, Report-Channel, ZONEVERSION, Update Lease, Multiple-QTYPE, padding, DNSSEC OK and Compact Answers OK flags;
 - DNSSEC canonical RRset serialization, RRSIG verification, DS/DNSKEY matching, NSEC/NSEC3 denial proofs, and chain-of-trust primitives;
 - caller-injected DNSSEC algorithm policy, crypto backend, time, and bounded scratch storage;
 - RFC 8945 TSIG HMAC authentication with bounded multi-message chaining and explicit truncation policy;
@@ -201,6 +201,7 @@ These can be layered above the wire/core APIs without forcing their resource mod
 
 - [`docs/architecture.md`](docs/architecture.md) — ownership, parsing, encoding, and layering.
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
+- [`docs/edns.md`](docs/edns.md) — operational EDNS options, strict semantics, Cookie rollover, Padding policy, Report-Channel, and NSID behavior.
 - [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/resolver.md`](docs/resolver.md) — response semantics, aliases, referrals/glue, bounded cache primitives, and retry planning.
 - [`docs/high_level_resolver.md`](docs/high_level_resolver.md) — bounded query lifecycle, transport actions, cache/DNSSEC hooks, and referral composition.

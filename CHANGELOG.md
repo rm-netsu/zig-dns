@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Expand operational EDNS support with RFC 7873/RFC 9018 DNS Cookies, RFC 7828 TCP Keepalive, RFC 5001 NSID, RFC 7314 EXPIRE, RFC 9567 Report-Channel, RFC 9660 ZONEVERSION, RFC 9664 Update Lease, and RFC 10029 Multiple-QTYPE typed parsing/building.
+- Add typed Extended DNS Error diagnostics with unknown-code preservation and strict UTF-8 handling without turning EDE metadata into resolver policy.
+- Add RFC 7830 Padding multiplicity validation plus bounded RFC 8467 block-length helpers that respect caller-selected message/payload limits and remain transactional when padding cannot fit.
+- Validate operational EDNS message semantics in one OPT pass and extend deterministic arbitrary-payload/generated round-trip replay.
+- Fix RFC 9018 client-address lifetime handling that could produce incorrect Server Cookie SipHash results in optimized builds.
+- Preserve resolved git revisions in real-corpus A/B benchmark output so later result merges cannot silently compare different HEAD commits.
+
 ## 0.7.0 - 2026-08-20
 
 - Add caller-defined authoritative QUERY response composition for exact answers, CNAME/DNAME, RFC 4592 wildcards, delegations/referrals, glue, DS-at-cut, NODATA/NXDOMAIN, EDNS/BADVERS, explicit ANY policy, and whole-RRset truncation.
