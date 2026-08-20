@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.1.0 is the first usable protocol-core release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.1.0 is the latest tagged protocol-core release. The development branch is building the 0.2.0 DNSSEC validation layer. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -17,7 +17,8 @@ Version 0.1.0 is the first usable protocol-core release. The public API is still
 - transactional builder operations that roll back after local write failures;
 - typed helpers for common RRs and raw passthrough for every unknown RR type;
 - EDNS(0), extended RCODEs, ECS, EDE, padding, DNSSEC OK and Compact Answers OK flags;
-- DNSSEC wire helpers for DS/DNSKEY/RRSIG/NSEC/NSEC3/NSEC3PARAM and canonical names;
+- DNSSEC canonical RRset serialization, RRSIG verification, DS/DNSKEY matching, NSEC/NSEC3 denial proofs, and chain-of-trust primitives;
+- caller-injected DNSSEC algorithm policy, crypto backend, time, and bounded scratch storage;
 - SVCB/HTTPS validation, including uncompressed targets and ordered SvcParams;
 - UDP truncation policy helper and incremental DNS-over-TCP decoder;
 - DoT, DoQ, and DoH wire/framing helpers without TLS, QUIC, or HTTP dependencies;
@@ -163,12 +164,12 @@ Two representations are intentionally available:
 
 ## Scope
 
-Included in 0.1.0:
+Core plus current 0.2.0 development work includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;
 - UDP/TCP transport framing and truncation decisions;
-- DNSSEC RR parsing/canonical-name primitives;
+- DNSSEC RR parsing, canonical RRsets, RRSIG verification, DS/DNSKEY matching, denial proofs, and trust-link primitives;
 - SVCB/HTTPS wire validation;
 - DoT/DoH/DoQ protocol adaptation helpers;
 - bounded resolver transaction and response-building helpers.
@@ -179,7 +180,7 @@ Deliberately outside the protocol core:
 - TLS/QUIC/HTTP implementations;
 - recursive resolution algorithm and delegation walking;
 - cache eviction/staleness/prefetch policy;
-- DNSSEC cryptographic signature or chain-of-trust verification;
+- recursive DNSSEC delegation walking and trust-anchor lifecycle management;
 - TSIG signing/authentication;
 - mDNS/LLMNR policy;
 - zone-file text parsing.
@@ -200,6 +201,7 @@ zig build test
 zig build check
 zig build example-inspect
 zig build example-resolver
+zig build example-dnssec
 ```
 
 The project targets Zig 0.16.0.

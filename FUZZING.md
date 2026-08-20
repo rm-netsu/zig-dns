@@ -8,7 +8,9 @@ Current replay coverage includes:
 2. builder → parser round trips over generated multi-label names;
 3. DNS-over-TCP framing under randomized stream fragmentation;
 4. compression pointer loop/forward-pointer rejection;
-5. bounded EDNS and RDATA parsing tests in their owning modules.
+5. DNSSEC canonical RR output under randomized presentation-name case;
+6. DNSSEC signed RRset output under randomized record permutations;
+7. bounded EDNS and RDATA parsing tests in their owning modules.
 
 Run it with:
 
@@ -22,6 +24,9 @@ For an external fuzzing harness, the best stateless entry points are:
 - `Name.init(packet, offset)` followed by `writeWire` into a 255-byte buffer;
 - `edns.Opt.fromRecord` + option iteration;
 - `svcb.validateRecord`;
-- `dnssec.TypeBitmapIterator.next`.
+- `dnssec.TypeBitmapIterator.next`;
+- `dnssec.CanonicalWriter.writeRecord`;
+- `dnssec.Rrset.canonicalOrder` and `dnssec.rrset.writeSignedData`;
+- `dnssec.denial.nsec3.hashName` with an explicit iteration cap.
 
 The parser APIs do not allocate, so fuzz harnesses can run them with fixed stack/caller buffers and no allocator noise.

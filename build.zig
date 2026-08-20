@@ -46,4 +46,17 @@ pub fn build(b: *std.Build) void {
     const resolver_step = b.step("example-resolver", "Run the resolver composition example");
     const run_resolver = b.addRunArtifact(resolver_example);
     resolver_step.dependOn(&run_resolver.step);
+
+    const dnssec_mod = b.createModule(.{
+        .root_source_file = b.path("examples/dnssec.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const dnssec_example = b.addExecutable(.{ .name = "dns-dnssec-example", .root_module = dnssec_mod });
+    check.dependOn(&dnssec_example.step);
+
+    const dnssec_step = b.step("example-dnssec", "Run the DNSSEC composition example");
+    const run_dnssec = b.addRunArtifact(dnssec_example);
+    dnssec_step.dependOn(&run_dnssec.step);
 }

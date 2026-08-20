@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add allocation-free DNSSEC canonical name ordering, canonical RR/RDATA serialization, RRset validation and canonical sorting.
+- Add streaming RRSIG signed-data generation with Original TTL and wildcard-owner reconstruction.
+- Add DS digest generation, DNSKEY key tags/matching, injectable algorithm policy, and an injectable crypto backend.
+- Add built-in RRSIG verification for RSA/SHA-1, RSA/SHA-256, RSA/SHA-512, ECDSA P-256/P-384, and Ed25519 with caller-injected time.
+- Add NSEC and NSEC3 authenticated-denial primitives, including closest-encloser, wildcard, NODATA, NXDOMAIN, Opt-Out, and explicit NSEC3 iteration limits.
+- Add trust-anchor, DNSKEY-set, delegation, and security-status primitives for composing a chain of trust without transport ownership.
+- Add deterministic canonicalization/RRset-order properties and a caller-owned DNSSEC composition example.
+
 ## 0.1.0
 
 - Add allocation-free DNS header/message/question/RR parsing with safe RFC 1035 name decompression.
