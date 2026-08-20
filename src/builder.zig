@@ -39,6 +39,13 @@ pub const Builder = struct {
         self.record_open = false;
     }
 
+    /// Update the response TC bit without disturbing transactional builder state.
+    /// Useful to turn a bounded response into an explicit truncation after a
+    /// complete RRset failed to fit.
+    pub fn setTruncated(self: *Builder, truncated: bool) void {
+        self.header.flags.truncated = truncated;
+    }
+
     pub fn addQuestionWire(self: *Builder, qname: name_mod.Uncompressed, qtype: types.Type, qclass: types.Class) Error!void {
         if (self.record_open) return error.RecordOpen;
         if (self.phase != .questions) return error.SectionOrder;

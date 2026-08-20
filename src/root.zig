@@ -11,6 +11,7 @@ pub const resolver = @import("resolver.zig");
 pub const high_level = @import("high_level.zig");
 pub const cache = @import("cache.zig");
 pub const server = @import("server.zig");
+pub const authoritative = @import("authoritative.zig");
 pub const dnssec = @import("dnssec.zig");
 pub const tsig = @import("tsig.zig");
 pub const update = @import("update.zig");
@@ -52,6 +53,7 @@ test {
     _ = high_level;
     _ = cache;
     _ = server;
+    _ = authoritative;
     _ = dnssec;
     _ = tsig;
     _ = update;
