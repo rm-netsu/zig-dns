@@ -17,6 +17,8 @@ The current operational surface includes:
 | Option | API | Important semantics |
 | --- | --- | --- |
 | NSID | `parseNsid`, `addNsidRequest`, `addNsidResponse` | request builder is empty; response payload is opaque binary |
+| DAU/DHU/N3U | `parseDau` / `parseDhu` / `parseN3u`, `addDau` / `addDhu` / `addN3u` | borrowed RFC 6975 algorithm lists; one instance of each code per query |
+| Key Tag | `parseKeyTag`, `addKeyTags` | one-or-more 16-bit tags per option; multiple query option instances are preserved |
 | Update Lease | `parseUpdateLease`, `addUpdateLease` | 4-byte and KEY-specific 8-byte forms |
 | ECS | `clientSubnet`, `addClientSubnet` | family/prefix validation and canonical host-bit clearing |
 | EXPIRE | `parseExpire`, `addExpireRequest`, `addExpireResponse` | empty request, 32-bit remaining-lifetime response |
@@ -32,6 +34,29 @@ The current operational surface includes:
 expressed by an isolated option payload parser, including opcode/direction,
 option multiplicity, ZONEVERSION/QNAME consistency, and Multiple-QTYPE primary
 QTYPE validation.
+
+## DNSSEC capability signaling
+
+RFC 6975 DAU/DHU/N3U values are exposed as borrowed octet lists. The parser
+preserves unknown and registry-reserved values instead of freezing the current
+IANA registries into wire parsing: RFC 6975 permits receivers to ignore such
+values, and the registry can evolve independently of this library release.
+Strict query validation enforces the RFC rule that each of DAU, DHU, and N3U
+appears at most once. Values appearing in a response are ignored as required by
+the receiver behavior in RFC 6975.
+
+RFC 8145 Key Tag signaling uses a borrowed network-order list with an iterator
+over `u16` tags. `addKeyTags()` requires at least one tag and writes
+transactionally. Unlike DAU/DHU/N3U, multiple Key Tag option instances are
+valid and intentionally preserved because a recursive resolver may forward its
+own and a downstream client's lists separately. Query-side strict validation
+requires Key Tag signaling to accompany DNSKEY questions. Response-side values,
+including malformed payloads, are ignored rather than promoted to a protocol
+failure because RFC 8145 requires clients to ignore this option in responses.
+
+Neither helper decides whether signaling should be enabled. Validator role,
+trust-anchor privacy policy, and which currently assigned algorithms to signal
+remain caller policy.
 
 ## DNS Cookies
 

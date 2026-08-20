@@ -80,7 +80,7 @@ test "operational EDNS parsers survive arbitrary payloads" {
         for (payload[0..len]) |*b| b.* = rng.byte();
         const data = payload[0..len];
 
-        switch (rng.next() % 12) {
+        switch (rng.next() % 16) {
             0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
             1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
             2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
@@ -92,7 +92,11 @@ test "operational EDNS parsers survive arbitrary payloads" {
             8 => _ = edns.parseMultipleQtypeResponse(.{ .code = .MQTYPE_RESPONSE, .data = data }) catch continue,
             9 => _ = edns.parseReportChannel(.{ .code = .REPORT_CHANNEL, .data = data }) catch continue,
             10 => _ = edns.parsePadding(.{ .code = .PADDING, .data = data }) catch continue,
-            else => _ = edns.parseNsid(.{ .code = .NSID, .data = data }, (rng.next() & 1) != 0) catch continue,
+            11 => _ = edns.parseNsid(.{ .code = .NSID, .data = data }, (rng.next() & 1) != 0) catch continue,
+            12 => _ = edns.parseDau(.{ .code = .DAU, .data = data }) catch continue,
+            13 => _ = edns.parseDhu(.{ .code = .DHU, .data = data }) catch continue,
+            14 => _ = edns.parseN3u(.{ .code = .N3U, .data = data }) catch continue,
+            else => _ = edns.parseKeyTag(.{ .code = .KEY_TAG, .data = data }) catch continue,
         }
     }
 }
@@ -103,7 +107,7 @@ test "operational EDNS builders round trip deterministic generated values" {
 
     for (0..512) |_| {
         var options = edns.OptionBuilder.init(&option_bytes);
-        switch (rng.next() % 8) {
+        switch (rng.next() % 10) {
             0 => {
                 var client: [edns.cookie.client_length]u8 = undefined;
                 for (&client) |*b| b.* = rng.byte();
@@ -174,7 +178,7 @@ test "operational EDNS builders round trip deterministic generated values" {
                 try parsed.validate(.A, &scratch);
                 try std.testing.expectEqual(@as(usize, 2), parsed.count());
             },
-            else => {
+            7 => {
                 var label: [12]u8 = undefined;
                 for (&label) |*b| b.* = 'a' + @as(u8, @intCast(rng.next() % 26));
                 var wire: [14]u8 = undefined;
@@ -185,6 +189,26 @@ test "operational EDNS builders round trip deterministic generated values" {
                 var it: edns.Iterator = .{ .bytes = options.bytes() };
                 const parsed = try edns.parseReportChannel((try it.next()).?);
                 try std.testing.expectEqualSlices(u8, &wire, parsed.agent_domain.bytes);
+            },
+            8 => {
+                var algorithms: [12]u8 = undefined;
+                const len: usize = @intCast(rng.next() % (algorithms.len + 1));
+                for (algorithms[0..len]) |*value| value.* = rng.byte();
+                try options.addDau(algorithms[0..len]);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseDau((try it.next()).?);
+                try std.testing.expectEqualSlices(u8, algorithms[0..len], parsed.algorithms);
+            },
+            else => {
+                var tags: [8]u16 = undefined;
+                const len: usize = 1 + @as(usize, @intCast(rng.next() % tags.len));
+                for (tags[0..len]) |*tag| tag.* = @truncate(rng.next());
+                try options.addKeyTags(tags[0..len]);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseKeyTag((try it.next()).?);
+                try std.testing.expectEqual(len, parsed.count());
+                var parsed_it = parsed.iterator();
+                for (tags[0..len]) |tag| try std.testing.expectEqual(tag, parsed_it.next().?);
             },
         }
     }

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Expand operational EDNS support with RFC 7873/RFC 9018 DNS Cookies, RFC 7828 TCP Keepalive, RFC 5001 NSID, RFC 7314 EXPIRE, RFC 9567 Report-Channel, RFC 9660 ZONEVERSION, RFC 9664 Update Lease, and RFC 10029 Multiple-QTYPE typed parsing/building.
+- Expand operational EDNS support with RFC 6975 DAU/DHU/N3U, RFC 8145 Key Tag signaling, RFC 7873/RFC 9018 DNS Cookies, RFC 7828 TCP Keepalive, RFC 5001 NSID, RFC 7314 EXPIRE, RFC 9567 Report-Channel, RFC 9660 ZONEVERSION, RFC 9664 Update Lease, and RFC 10029 Multiple-QTYPE typed parsing/building.
 - Add typed Extended DNS Error diagnostics with unknown-code preservation and strict UTF-8 handling without turning EDE metadata into resolver policy.
 - Add RFC 7830 Padding multiplicity validation plus bounded RFC 8467 block-length helpers that respect caller-selected message/payload limits and remain transactional when padding cannot fit.
 - Validate operational EDNS message semantics in one OPT pass and extend deterministic arbitrary-payload/generated round-trip replay.

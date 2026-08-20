@@ -57,6 +57,7 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             const option_summary = try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
             if (option_summary.has_zoneversion) try validateZoneVersionQuestion(m, opt);
             try validateMultipleQtypeQuestion(m, option_summary);
+            try validateKeyTagQuestion(m, option_summary);
             result.opt = opt;
         } else if (rr.rr_type == .TSIG) {
             if (result.tsig != null) return error.MultipleTsig;
@@ -97,6 +98,16 @@ fn validateZoneVersionQuestion(m: message.Message, opt: edns.Opt) Error!void {
                 seen[type_index] |= bit;
             },
         }
+    }
+}
+
+fn validateKeyTagQuestion(m: message.Message, summary: edns.MessageOptionSummary) Error!void {
+    if (m.header.flags.response or !summary.has_key_tag) return;
+    if (m.header.flags.opcode != .query or m.header.question_count == 0) return error.InvalidKeyTag;
+
+    var questions = m.questions();
+    while (try questions.next()) |question| {
+        if (question.qtype != .DNSKEY) return error.InvalidKeyTag;
     }
 }
 
@@ -519,4 +530,31 @@ test "strict validator follows RFC 5001 receiver rule for NSID request payload" 
     try query.addQuestion("example.com", .A, .IN);
     try query.addOpt(1232, 0, 0, .{}, options.bytes());
     _ = try messageStrict(try message.Message.init(try query.finish()), .{});
+}
+
+test "strict validator enforces RFC 8145 key tag query type and ignores response values" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [64]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var options = edns.OptionBuilder.init(&option_buf);
+    try options.addKeyTags(&.{ 19036, 20326 });
+
+    var valid = try builder_mod.Builder.init(&packet, &compression, 0x8a01, .{});
+    try valid.addQuestion("example.com", .DNSKEY, .IN);
+    try valid.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, options.bytes());
+    _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
+
+    var invalid = try builder_mod.Builder.init(&packet, &compression, 0x8a02, .{});
+    try invalid.addQuestion("example.com", .A, .IN);
+    try invalid.addOpt(1232, 0, 0, .{}, options.bytes());
+    try std.testing.expectError(error.InvalidKeyTag, messageStrict(try message.Message.init(try invalid.finish()), .{}));
+
+    var response_options = edns.OptionBuilder.init(&option_buf);
+    try response_options.add(.KEY_TAG, &.{0xff});
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8a03, .{ .response = true });
+    try response.addQuestion("example.com", .DNSKEY, .IN);
+    try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
+    _ = try messageStrict(try message.Message.init(try response.finish()), .{});
 }

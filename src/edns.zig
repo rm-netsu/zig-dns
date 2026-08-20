@@ -12,6 +12,8 @@ const expire_mod = @import("edns/expire.zig");
 const report_channel_mod = @import("edns/report_channel.zig");
 const padding_mod = @import("edns/padding.zig");
 const nsid_mod = @import("edns/nsid.zig");
+const algorithm_signal_mod = @import("edns/algorithm_signal.zig");
+const key_tag_mod = @import("edns/key_tag.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -23,9 +25,11 @@ pub const expire = expire_mod;
 pub const report_channel = report_channel_mod;
 pub const padding = padding_mod;
 pub const nsid = nsid_mod;
+pub const algorithm_signal = algorithm_signal_mod;
+pub const key_tag = key_tag_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding, InvalidAlgorithmSignal, InvalidKeyTag };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -163,6 +167,28 @@ pub fn parseNsid(opt: Option, response: bool) Error!Nsid {
     return nsid_mod.parse(opt.data, response);
 }
 
+pub const AlgorithmSignalList = algorithm_signal_mod.List;
+pub fn parseDau(opt: Option) Error!AlgorithmSignalList {
+    if (opt.code != .DAU) return error.InvalidOption;
+    return algorithm_signal_mod.parse(opt.data);
+}
+
+pub fn parseDhu(opt: Option) Error!AlgorithmSignalList {
+    if (opt.code != .DHU) return error.InvalidOption;
+    return algorithm_signal_mod.parse(opt.data);
+}
+
+pub fn parseN3u(opt: Option) Error!AlgorithmSignalList {
+    if (opt.code != .N3U) return error.InvalidOption;
+    return algorithm_signal_mod.parse(opt.data);
+}
+
+pub const KeyTagList = key_tag_mod.List;
+pub fn parseKeyTag(opt: Option) Error!KeyTagList {
+    if (opt.code != .KEY_TAG) return error.InvalidOption;
+    return key_tag_mod.parse(opt.data) catch error.InvalidKeyTag;
+}
+
 pub const Padding = padding_mod.Padding;
 pub fn parsePadding(opt: Option) Error!Padding {
     if (opt.code != .PADDING) return error.InvalidOption;
@@ -207,6 +233,18 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
         .UPDATE_LEASE => _ = try parseUpdateLease(opt),
         .NSID => _ = try parseNsid(opt, response),
+        .DAU => {
+            if (!response) _ = try parseDau(opt);
+        },
+        .DHU => {
+            if (!response) _ = try parseDhu(opt);
+        },
+        .N3U => {
+            if (!response) _ = try parseN3u(opt);
+        },
+        .KEY_TAG => {
+            if (!response) _ = try parseKeyTag(opt);
+        },
         .ECS => _ = try clientSubnet(opt),
         .EXPIRE => {
             const value = try parseExpire(opt);
@@ -251,6 +289,10 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
 
 pub const MessageOptionSummary = struct {
     has_zoneversion: bool = false,
+    has_key_tag: bool = false,
+    has_dau: bool = false,
+    has_dhu: bool = false,
+    has_n3u: bool = false,
     has_padding: bool = false,
     report_channel: ?Option = null,
     mqtype_query: ?Option = null,
@@ -281,6 +323,21 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
             .PADDING => {
                 if (summary.has_padding) return error.InvalidPadding;
                 summary.has_padding = true;
+            },
+            .DAU => if (!response) {
+                if (summary.has_dau) return error.InvalidAlgorithmSignal;
+                summary.has_dau = true;
+            },
+            .DHU => if (!response) {
+                if (summary.has_dhu) return error.InvalidAlgorithmSignal;
+                summary.has_dhu = true;
+            },
+            .N3U => if (!response) {
+                if (summary.has_n3u) return error.InvalidAlgorithmSignal;
+                summary.has_n3u = true;
+            },
+            .KEY_TAG => {
+                if (!response) summary.has_key_tag = true;
             },
             .REPORT_CHANNEL => {
                 if (summary.report_channel != null) return error.InvalidReportChannel;
@@ -459,6 +516,31 @@ pub const OptionBuilder = struct {
 
     pub fn addNsidResponse(self: *OptionBuilder, identifier: []const u8) error{NoSpace}!void {
         try self.add(.NSID, identifier);
+    }
+
+    pub fn addDau(self: *OptionBuilder, algorithms: []const u8) error{NoSpace}!void {
+        try self.add(.DAU, algorithms);
+    }
+
+    pub fn addDhu(self: *OptionBuilder, algorithms: []const u8) error{NoSpace}!void {
+        try self.add(.DHU, algorithms);
+    }
+
+    pub fn addN3u(self: *OptionBuilder, algorithms: []const u8) error{NoSpace}!void {
+        try self.add(.N3U, algorithms);
+    }
+
+    pub fn addKeyTags(self: *OptionBuilder, key_tags: []const u16) error{ NoSpace, InvalidKeyTag }!void {
+        if (key_tags.len == 0 or key_tags.len > std.math.maxInt(u16) / 2) return error.InvalidKeyTag;
+        const data_len = key_tags.len * 2;
+        if (self.pos > self.out.len or data_len + 4 > self.out.len - self.pos) return error.NoSpace;
+        const start = self.pos;
+        std.mem.writeInt(u16, self.out[start..][0..2], @intFromEnum(OptionCode.KEY_TAG), .big);
+        std.mem.writeInt(u16, self.out[start + 2 ..][0..2], @intCast(data_len), .big);
+        for (key_tags, 0..) |tag, i| {
+            std.mem.writeInt(u16, self.out[start + 4 + i * 2 ..][0..2], tag, .big);
+        }
+        self.pos += 4 + data_len;
     }
 
     pub fn addKeepaliveRequest(self: *OptionBuilder) error{NoSpace}!void {
@@ -785,4 +867,60 @@ test "RFC 5001 NSID typed builders preserve opaque response bytes" {
     try std.testing.expectEqual(Nsid.request, try parseNsid((try iterator.next()).?, false));
     const response = try parseNsid((try iterator.next()).?, true);
     try std.testing.expectEqualSlices(u8, &.{ 0, 0xff, 0x41 }, response.response);
+}
+
+test "RFC 6975 typed algorithm signaling builders preserve opaque registry codes" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addDau(&.{ 15, 8, 13 });
+    try builder.addDhu(&.{ 2, 4 });
+    try builder.addN3u(&.{1});
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    const dau = try parseDau((try it.next()).?);
+    try std.testing.expectEqualSlices(u8, &.{ 15, 8, 13 }, dau.algorithms);
+    const dhu = try parseDhu((try it.next()).?);
+    try std.testing.expectEqualSlices(u8, &.{ 2, 4 }, dhu.algorithms);
+    const n3u = try parseN3u((try it.next()).?);
+    try std.testing.expectEqualSlices(u8, &.{1}, n3u.algorithms);
+}
+
+test "RFC 6975 query rejects duplicate option codes but response values are ignored" {
+    var bytes: [32]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addDau(&.{8});
+    try builder.addDau(&.{13});
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    try std.testing.expectError(error.InvalidAlgorithmSignal, validateMessageOptions(opt, false, .query));
+    _ = try validateMessageOptions(opt, true, .query);
+}
+
+test "RFC 8145 typed key tag builder supports multiple option instances" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addKeyTags(&.{ 19036, 12345 });
+    try builder.addKeyTags(&.{ 19036, 34567 });
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    const first = try parseKeyTag((try it.next()).?);
+    try std.testing.expectEqual(@as(usize, 2), first.count());
+    try std.testing.expect(first.contains(19036));
+    try std.testing.expect(first.contains(12345));
+    const second = try parseKeyTag((try it.next()).?);
+    try std.testing.expect(second.contains(34567));
+
+    const before = builder.pos;
+    try std.testing.expectError(error.InvalidKeyTag, builder.addKeyTags(&.{}));
+    try std.testing.expectEqual(before, builder.pos);
+}
+
+test "RFC 8145 response option payload is ignored by strict EDNS validation" {
+    var bytes: [16]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    // RFC 8145 requires clients to ignore edns-key-tag values in responses,
+    // even though this odd-length payload is not a valid query-side list.
+    try builder.add(.KEY_TAG, &.{0xff});
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    try std.testing.expectError(error.InvalidKeyTag, validateMessageOptions(opt, false, .query));
+    _ = try validateMessageOptions(opt, true, .query);
 }
