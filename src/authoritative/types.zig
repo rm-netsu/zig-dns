@@ -26,6 +26,10 @@ pub const Options = struct {
     zone_class: types.Class = .IN,
     transport: Transport = .datagram,
     max_udp_payload: u16 = 1232,
+    /// Bytes kept free at the end of the negotiated DNS response limit for a
+    /// caller-owned final Additional RR (most commonly TSIG). The composer
+    /// does not write into or interpret this reserved tail.
+    tail_reserve: usize = 0,
     recursion_available: bool = false,
     include_glue: bool = true,
     any_policy: AnyPolicy = .refuse,

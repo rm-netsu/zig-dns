@@ -485,3 +485,104 @@ test "authoritative response honors 512-byte UDP fallback and truncates whole rr
     try std.testing.expect(m.header.flags.truncated);
     try std.testing.expectEqual(@as(u16, 0), m.header.answer_count);
 }
+
+test "authoritative response composes with exact TSIG tail reservation" {
+    const tsig_auth = @import("../tsig/auth.zig");
+    const tsig_record = @import("../tsig/record.zig");
+    const validate = @import("../validate.zig");
+
+    var key_name_storage: [64]u8 = undefined;
+    const key = try tsig_auth.Key.init("auth-key.example", "authoritative shared secret", &key_name_storage);
+
+    var store: TestStore = .{ .items = &base_items, .apex_name = .{ .bytes = apex_wire } };
+    var composer = Composer(TestStore).init(&store);
+
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [32]builder.CompressionEntry = undefined;
+    var qb = try builder.Builder.init(&qbuf, &qcomp, 0x8a01, .{});
+    try qb.addQuestion("www.example", .A, .IN);
+    try qb.addOpt(512, 0, 0, .{}, &.{});
+    var request_mac = try tsig_auth.signBuilder(&qb, key, .{ .time_signed = 1_700_100_000 });
+    defer request_mac.deinit();
+    const query = try message.Message.init(try qb.finish());
+    _ = try validate.messageStrict(query, .{});
+    var query_additional = try query.records(.additional);
+    _ = try query_additional.next(); // OPT
+    const request_tsig = try tsig_record.parse((try query_additional.next()).?);
+    try tsig_auth.verify(query, request_tsig, key, .{ .now = 1_700_100_000 });
+
+    const sign_options: tsig_auth.SignOptions = .{
+        .time_signed = 1_700_100_001,
+        .request_mac = request_mac.slice(),
+    };
+    const reserve = try tsig_auth.signedRecordWireSize(key, sign_options, true);
+
+    var out: [512]u8 = undefined;
+    var comp: [64]builder.CompressionEntry = undefined;
+    const response = try composer.compose(query, &out, &comp, .{ .max_udp_payload = 512, .tail_reserve = reserve });
+    var signed = try tsig_auth.signInPlace(&out, response.bytes.len, key, sign_options);
+    defer signed.deinit();
+    try std.testing.expect(signed.bytes.len <= 512);
+    try std.testing.expectEqual(response.bytes.len + reserve, signed.bytes.len);
+
+    const m = try message.Message.init(signed.bytes);
+    _ = try validate.messageStrict(m, .{});
+    try std.testing.expectEqual(@as(u16, 2), m.header.additional_count); // OPT + TSIG
+    var additional = try m.records(.additional);
+    try std.testing.expectEqual(types.Type.OPT, (try additional.next()).?.rr_type);
+    const response_tsig = try tsig_record.parse((try additional.next()).?);
+    try std.testing.expect((try additional.next()) == null);
+    try tsig_auth.verify(m, response_tsig, key, .{ .now = 1_700_100_001, .request_mac = request_mac.slice() });
+}
+
+test "authoritative TSIG reservation truncates a whole RRset before signing" {
+    const tsig_auth = @import("../tsig/auth.zig");
+    const validate = @import("../validate.zig");
+
+    const large_txt = comptime blk: {
+        var data: [402]u8 = undefined;
+        data[0] = 255;
+        @memset(data[1..256], 'x');
+        data[256] = 145;
+        @memset(data[257..402], 'y');
+        break :blk data;
+    };
+    const items = [_]TestStore.Item{
+        .{ .rr = .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata } },
+        .{ .rr = .{ .owner = .{ .bytes = www_wire }, .rr_type = .TXT, .class = .IN, .ttl = 60, .rdata = &large_txt } },
+    };
+    var store: TestStore = .{ .items = &items, .apex_name = .{ .bytes = apex_wire } };
+    var composer = Composer(TestStore).init(&store);
+
+    var key_name_storage: [64]u8 = undefined;
+    const key = try tsig_auth.Key.init("auth-key.example", "authoritative shared secret", &key_name_storage);
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [32]builder.CompressionEntry = undefined;
+    var qb = try builder.Builder.init(&qbuf, &qcomp, 0x8a02, .{});
+    try qb.addQuestion("www.example", .TXT, .IN);
+    var request_mac = try tsig_auth.signBuilder(&qb, key, .{ .time_signed = 1_700_100_100 });
+    defer request_mac.deinit();
+    const query = try message.Message.init(try qb.finish());
+
+    var out: [512]u8 = undefined;
+    var comp: [64]builder.CompressionEntry = undefined;
+    const unreserved = try composer.compose(query, &out, &comp, .{ .max_udp_payload = 512 });
+    try std.testing.expect(!unreserved.truncated);
+    try std.testing.expectEqual(@as(u16, 1), (try message.Message.init(unreserved.bytes)).header.answer_count);
+
+    const sign_options: tsig_auth.SignOptions = .{
+        .time_signed = 1_700_100_101,
+        .request_mac = request_mac.slice(),
+    };
+    const reserve = try tsig_auth.signedRecordWireSize(key, sign_options, true);
+    const reserved = try composer.compose(query, &out, &comp, .{ .max_udp_payload = 512, .tail_reserve = reserve });
+    try std.testing.expect(reserved.truncated);
+    const unsigned = try message.Message.init(reserved.bytes);
+    try std.testing.expect(unsigned.header.flags.truncated);
+    try std.testing.expectEqual(@as(u16, 0), unsigned.header.answer_count);
+
+    var signed = try tsig_auth.signInPlace(&out, reserved.bytes.len, key, sign_options);
+    defer signed.deinit();
+    try std.testing.expect(signed.bytes.len <= 512);
+    _ = try validate.messageStrict(try message.Message.init(signed.bytes), .{});
+}

@@ -116,8 +116,10 @@ pub fn Composer(comptime Store: type) type {
             const limit = responseLimit(out.len, qi.opt, options);
             const needs_opt = qi.opt != null;
             const opt_wire_len: usize = if (needs_opt) 11 else 0;
-            if (limit < types.Header.wire_len + opt_wire_len) return error.NoSpace;
-            const builder_limit = limit - opt_wire_len;
+            if (options.tail_reserve > limit) return error.NoSpace;
+            const content_limit = limit - options.tail_reserve;
+            if (content_limit < types.Header.wire_len + opt_wire_len) return error.NoSpace;
+            const builder_limit = content_limit - opt_wire_len;
 
             var b = try server.beginResponse(out[0..builder_limit], compression, query, .{
                 .authoritative = authoritative,
@@ -182,7 +184,7 @@ pub fn Composer(comptime Store: type) type {
             const base = try b.finish();
             const final = if (qi.opt) |request_opt|
                 try appendResponseOpt(
-                    out[0..limit],
+                    out[0..content_limit],
                     base.len,
                     @max(@as(u16, 512), options.max_udp_payload),
                     if (kind == .bad_edns_version) .bad_version_or_signature else rcode,
