@@ -12,6 +12,8 @@ pub const Error = message.ParseError || builder_mod.Error || error{
     UnsupportedEvent,
     InvalidClass,
     NotAuthoritative,
+    InvalidFlags,
+    InvalidRcode,
     QuestionMismatch,
 };
 
@@ -72,14 +74,21 @@ pub fn validateRequest(m: message.Message) Error!Notification {
     if (m.header.flags.opcode != .notify) return error.InvalidOpcode;
     if (m.header.flags.response) return error.NotRequest;
     if (!m.header.flags.authoritative) return error.NotAuthoritative;
+    try validateEnvelopeFlags(m.header.flags, false);
     try validateQuestions(m);
     try m.validate();
     return .{ .message = m };
 }
 
-pub fn validateResponse(m: message.Message) Error!Notification {
+/// Validate the canonical successful NOERROR response form from RFC 1996
+/// section 4.7. Error responses such as NOTIMP are ordinary DNS responses and
+/// remain available through Message/Rcode rather than being misclassified as
+/// successful notifications.
+pub fn validateSuccessResponse(m: message.Message) Error!Notification {
     if (m.header.flags.opcode != .notify) return error.InvalidOpcode;
     if (!m.header.flags.response) return error.NotResponse;
+    if (!m.header.flags.authoritative) return error.NotAuthoritative;
+    try validateEnvelopeFlags(m.header.flags, true);
     try validateQuestions(m);
     try m.validate();
     return .{ .message = m };
@@ -114,6 +123,19 @@ fn validClass(class: types.Class) bool {
     return class != .ANY and class != .NONE and @intFromEnum(class) != 0;
 }
 
+fn validateEnvelopeFlags(flags: types.Flags, is_response: bool) Error!void {
+    // RFC 1996 section 3.2 requires fields not described by NOTIFY to be
+    // binary zero. The normal SOA-change envelopes in sections 4.5/4.7 use
+    // AA in both directions and QR only on the response.
+    if (flags.response != is_response or !flags.authoritative) return error.InvalidFlags;
+    if (flags.truncated or flags.recursion_desired or flags.recursion_available or
+        flags.zero or flags.authenticated_data or flags.checking_disabled)
+    {
+        return error.InvalidFlags;
+    }
+    if (flags.rcode_low != 0) return error.InvalidRcode;
+}
+
 test "NOTIFY request and response compose and match" {
     var request_bytes: [512]u8 = undefined;
     var request_compression: [16]builder_mod.CompressionEntry = undefined;
@@ -129,7 +151,7 @@ test "NOTIFY request and response compose and match" {
     var response_compression: [16]builder_mod.CompressionEntry = undefined;
     var response_builder = try responseBuilder(&response_bytes, &response_compression, request);
     const response_message = try message.Message.init(try response_builder.finish());
-    const response = try validateResponse(response_message);
+    const response = try validateSuccessResponse(response_message);
     try std.testing.expect(response_message.header.flags.response);
     try std.testing.expect(try matches(request, response));
 }
@@ -159,6 +181,29 @@ test "NOTIFY matching detects changed ID and question" {
     var response_compression: [8]builder_mod.CompressionEntry = undefined;
     var response_builder = try builder_mod.Builder.init(&response_bytes, &response_compression, 12, .{ .opcode = .notify, .response = true, .authoritative = true });
     try response_builder.addQuestion("example.com", .SOA, .IN);
-    const response = try validateResponse(try message.Message.init(try response_builder.finish()));
+    const response = try validateSuccessResponse(try message.Message.init(try response_builder.finish()));
     try std.testing.expect(!(try matches(request, response)));
+}
+
+test "NOTIFY rejects nonzero fields outside the RFC 1996 envelope" {
+    var packet: [256]u8 = undefined;
+    var compression: [8]builder_mod.CompressionEntry = undefined;
+    var request = try builder_mod.Builder.init(&packet, &compression, 20, .{
+        .opcode = .notify,
+        .authoritative = true,
+        .recursion_desired = true,
+    });
+    try request.addQuestion("example.com", .SOA, .IN);
+    try std.testing.expectError(error.InvalidFlags, validateRequest(try message.Message.init(try request.finish())));
+
+    var response_packet: [256]u8 = undefined;
+    var response_compression: [8]builder_mod.CompressionEntry = undefined;
+    var response = try builder_mod.Builder.init(&response_packet, &response_compression, 21, .{
+        .opcode = .notify,
+        .response = true,
+        .authoritative = true,
+        .rcode_low = 1,
+    });
+    try response.addQuestion("example.com", .SOA, .IN);
+    try std.testing.expectError(error.InvalidRcode, validateSuccessResponse(try message.Message.init(try response.finish())));
 }
