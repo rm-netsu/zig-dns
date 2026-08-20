@@ -2,6 +2,9 @@ const std = @import("std");
 const types = @import("types.zig");
 const name_mod = @import("name.zig");
 const dnssec = @import("dnssec.zig");
+const message = @import("message.zig");
+const rdata = @import("rdata.zig");
+const builder = @import("builder.zig");
 
 pub const Kind = enum {
     positive,
@@ -20,6 +23,21 @@ pub const Meta = struct {
 
 pub fn expiresAt(now: u64, ttl_seconds: u32) u64 {
     return now +| @as(u64, ttl_seconds);
+}
+
+pub const NegativeTtlError = rdata.Error || error{InvalidRecordType};
+
+/// RFC 2308 negative-cache TTL carried by an SOA: min(SOA RR TTL,
+/// SOA.MINIMUM). The caller decides whether the surrounding response is an
+/// authoritative NXDOMAIN/NODATA suitable for caching.
+pub fn negativeTtl(soa_record: message.Record) NegativeTtlError!u32 {
+    if (soa_record.rr_type != .SOA) return error.InvalidRecordType;
+    const soa = try rdata.soa(soa_record);
+    return @min(soa_record.ttl, soa.minimum);
+}
+
+pub fn negativeExpiresAt(now: u64, soa_record: message.Record) NegativeTtlError!u64 {
+    return expiresAt(now, try negativeTtl(soa_record));
 }
 
 pub const Error = name_mod.Error || error{
@@ -324,4 +342,22 @@ test "expired slots are reused and expiration saturates" {
     try std.testing.expectEqual(@as(?usize, 0), cache.reusableSlot(5));
     _ = try cache.putPresentation("new.example", .{ .kind = .positive, .rr_type = .A, .expires_at = 50 }, 2, 5, null);
     try std.testing.expectEqual(@as(usize, 1), cache.activeCount(5));
+}
+
+test "negative cache TTL follows RFC 2308 SOA minimum rule" {
+    var packet: [768]u8 = undefined;
+    var compression: [32]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, 99, .{ .response = true, .authoritative = true });
+    try b.addSoa(.authority, "example", 300, "ns.example", "hostmaster.example", 1, 3600, 600, 86400, 60);
+    const msg = try message.Message.init(try b.finish());
+    var authority = try msg.records(.authority);
+    const soa = (try authority.next()).?;
+    try std.testing.expectEqual(@as(u32, 60), try negativeTtl(soa));
+    try std.testing.expectEqual(@as(u64, 1060), try negativeExpiresAt(1000, soa));
+
+    var b2 = try builder.Builder.init(&packet, &compression, 100, .{ .response = true, .authoritative = true });
+    try b2.addSoa(.authority, "example", 30, "ns.example", "hostmaster.example", 1, 3600, 600, 86400, 600);
+    const msg2 = try message.Message.init(try b2.finish());
+    var authority2 = try msg2.records(.authority);
+    try std.testing.expectEqual(@as(u32, 30), try negativeTtl((try authority2.next()).?));
 }
