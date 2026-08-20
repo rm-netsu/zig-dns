@@ -18,6 +18,7 @@ pub const update = @import("update.zig");
 pub const notify = @import("notify.zig");
 pub const transfer = @import("transfer.zig");
 pub const svcb = @import("svcb.zig");
+pub const resinfo = @import("resinfo.zig");
 pub const udp = @import("udp.zig");
 pub const dot = @import("dot.zig");
 pub const doh = @import("doh.zig");
@@ -60,6 +61,7 @@ test {
     _ = notify;
     _ = transfer;
     _ = svcb;
+    _ = resinfo;
     _ = udp;
     _ = dot;
     _ = doh;

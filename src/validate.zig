@@ -156,7 +156,11 @@ pub fn knownRdata(rr: message.Record) Error!void {
             if (2 + try v.exchange.consumed() != rr.rdata.len) return error.InvalidRdata;
         },
         .SOA => _ = try rdata.soa(rr),
-        .TXT => {
+        .TXT, .RESINFO => {
+            // RESINFO uses TXT framing. RFC 9606 tells clients to ignore
+            // invalid RESINFO records, so message-level strict validation
+            // checks only constituent-string bounds and leaves key/value
+            // semantics to dns.resinfo.
             var it = rdata.txt(rr);
             while (try it.next()) |_| {}
         },

@@ -66,6 +66,7 @@ pub const Type = enum(u16) {
     ANY = 255,
     URI = 256,
     CAA = 257,
+    RESINFO = 261,
     _,
 };
 
@@ -186,6 +187,7 @@ test "header round trip" {
 test "data RRTYPE classification preserves private use and rejects meta ranges" {
     try std.testing.expect(isDataRrType(.A));
     try std.testing.expect(isDataRrType(.HTTPS));
+    try std.testing.expect(isDataRrType(.RESINFO));
     try std.testing.expect(isDataRrType(@enumFromInt(65280)));
     try std.testing.expect(!isDataRrType(@enumFromInt(0)));
     try std.testing.expect(!isDataRrType(.OPT));

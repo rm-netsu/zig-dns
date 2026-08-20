@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const name_mod = @import("name.zig");
 const edns = @import("edns.zig");
+const resinfo_mod = @import("resinfo.zig");
 
 pub const Error = name_mod.Error || error{ NoSpace, TooManyRecords, SectionOrder, RecordOpen, NoRecordOpen, RdataTooLong };
 
@@ -184,6 +185,25 @@ pub const Builder = struct {
             if (s.len > 255) return error.RdataTooLong;
             try w.writeByte(@intCast(s.len));
             try w.writeBytes(s);
+        }
+        try w.finish();
+    }
+
+    pub fn addResInfo(self: *Builder, section: types.Section, owner: []const u8, ttl: u32, attributes: []const resinfo_mod.Attribute) (Error || resinfo_mod.AttributeError || resinfo_mod.KnownValueError)!void {
+        // Validate every caller-supplied attribute before opening the record so
+        // local semantic failures never mutate section/compression state.
+        for (attributes) |attribute| try resinfo_mod.validateForBuild(attribute);
+
+        var w = try self.beginRecord(section, owner, .RESINFO, .IN, ttl);
+        errdefer w.abort();
+        for (attributes) |attribute| {
+            const encoded_len = attribute.key.len + if (attribute.value) |value| 1 + value.len else 0;
+            try w.writeByte(@intCast(encoded_len));
+            try w.writeBytes(attribute.key);
+            if (attribute.value) |value| {
+                try w.writeByte('=');
+                try w.writeBytes(value);
+            }
         }
         try w.finish();
     }
@@ -433,6 +453,22 @@ test "failed record write rolls builder back transactionally" {
     try std.testing.expect(!b.record_open);
 }
 
+test "RESINFO builder rejects invalid known value before mutation" {
+    var out: [256]u8 = undefined;
+    var entries: [8]CompressionEntry = undefined;
+    var b = try Builder.init(&out, &entries, 8, .{ .response = true });
+    try b.addQuestion("resolver.example", .RESINFO, .IN);
+    const before = b.pos;
+    const before_compression = b.compression_len;
+
+    try std.testing.expectError(error.InvalidInfoUrl, b.addResInfo(.answer, "resolver.example", 60, &.{
+        .{ .key = "infourl", .value = "http://resolver.example/" },
+    }));
+    try std.testing.expectEqual(before, b.pos);
+    try std.testing.expectEqual(before_compression, b.compression_len);
+    try std.testing.expectEqual(@as(u16, 0), b.header.answer_count);
+}
+
 test "wire owner preserves arbitrary label octets" {
     var out: [128]u8 = undefined;
     var entries: [4]CompressionEntry = undefined;
@@ -460,6 +496,11 @@ test "typed modern record helpers produce strictly valid message" {
     try b.addSshfp(.additional, "host.example.com", 300, 4, 2, &([_]u8{0x33} ** 32));
     try b.addUri(.additional, "_svc.example.com", .IN, 300, 10, 1, "https://example.com/");
     try b.addZonemd(.additional, "example.com", .IN, 300, 1, 1, 1, &([_]u8{0x44} ** 48));
+    try b.addResInfo(.additional, "resolver.example.com", 300, &.{
+        .{ .key = "qnamemin", .value = null },
+        .{ .key = "exterr", .value = "15-17" },
+        .{ .key = "infourl", .value = "https://resolver.example.com/guide" },
+    });
     const target = try name_mod.Uncompressed.init(&.{ 3, 's', 'v', 'c', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0 });
     const port_param = [_]u8{ 0, 3, 0, 2, 1, 0xbb };
     try b.addSvcb(.additional, "_https.example.com", .HTTPS, 300, 1, target, &port_param);

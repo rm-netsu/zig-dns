@@ -23,6 +23,7 @@ Version 0.7.0 is the current authoritative-composition release. The public API i
 - RFC 2136 Dynamic UPDATE composition/prescan with semantic prerequisite and add/delete APIs;
 - RFC 1996 SOA NOTIFY composition, validation, and transport-neutral response matching;
 - SVCB/HTTPS validation, including uncompressed targets and ordered SvcParams;
+- RFC 9606 RESINFO typed parsing/building with borrowed resolver-information attributes;
 - UDP truncation policy helper and incremental DNS-over-TCP decoder;
 - DoT, DoQ, and DoH wire/framing helpers without TLS, QUIC, or HTTP dependencies;
 - fixed-capacity resolver transaction table for pipelined/out-of-order responses;
@@ -202,6 +203,7 @@ These can be layered above the wire/core APIs without forcing their resource mod
 - [`docs/architecture.md`](docs/architecture.md) — ownership, parsing, encoding, and layering.
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
 - [`docs/edns.md`](docs/edns.md) — operational EDNS options, strict semantics, Cookie rollover, Padding policy, Report-Channel, and NSID behavior.
+- [`docs/resinfo.md`](docs/resinfo.md) — RFC 9606 resolver-information records, known-key helpers, and client-policy boundaries.
 - [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/resolver.md`](docs/resolver.md) — response semantics, aliases, referrals/glue, bounded cache primitives, and retry planning.
 - [`docs/high_level_resolver.md`](docs/high_level_resolver.md) — bounded query lifecycle, transport actions, cache/DNSSEC hooks, and referral composition.

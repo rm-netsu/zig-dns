@@ -12,6 +12,7 @@ const update = @import("update.zig");
 const types = @import("types.zig");
 const transfer = @import("transfer.zig");
 const resolver = @import("resolver.zig");
+const resinfo = @import("resinfo.zig");
 
 const Lcg = struct {
     state: u64,
@@ -68,6 +69,27 @@ test "builder parser round trips deterministic name corpus" {
         var ri = try m.records(.answer);
         const rr = (try ri.next()).?;
         try std.testing.expect(try rr.name.eqlPresentationIgnoreCase(qname));
+    }
+}
+
+test "RESINFO parser survives arbitrary TXT payloads" {
+    var rng: Lcg = .{ .state = 0x9606_6763_2610_0001 };
+    var payload: [96]u8 = undefined;
+
+    for (0..4096) |_| {
+        const len: usize = @intCast(rng.next() % (payload.len + 1));
+        for (payload[0..len]) |*b| b.* = rng.byte();
+        var it: resinfo.Iterator = .{ .bytes = payload[0..len] };
+        while (it.next() catch break) |attribute| {
+            switch (attribute.knownKey()) {
+                .exterr => {
+                    var ranges = resinfo.extendedErrors(attribute) catch continue;
+                    while (ranges.next() catch break) |_| {}
+                },
+                .infourl => _ = resinfo.infoUrl(attribute) catch continue,
+                .qnamemin, .unknown => {},
+            }
+        }
     }
 }
 
