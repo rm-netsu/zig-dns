@@ -17,4 +17,5 @@ test {
     _ = composer;
     _ = store;
     _ = @import("authoritative/composer_test.zig");
+    _ = @import("authoritative/property.zig");
 }
