@@ -10,7 +10,9 @@ Current replay coverage includes:
 4. compression pointer loop/forward-pointer rejection;
 5. DNSSEC canonical RR output under randomized presentation-name case;
 6. DNSSEC signed RRset output under randomized record permutations;
-7. bounded EDNS and RDATA parsing tests in their owning modules.
+7. arbitrary TSIG RDATA through the RFC 8945 structural parser;
+8. UPDATE prescan over arbitrary UPDATE-shaped packets plus generated semantic operations;
+9. bounded EDNS and RDATA parsing tests in their owning modules.
 
 Run it with:
 
@@ -27,6 +29,8 @@ For an external fuzzing harness, the best stateless entry points are:
 - `dnssec.TypeBitmapIterator.next`;
 - `dnssec.CanonicalWriter.writeRecord`;
 - `dnssec.Rrset.canonicalOrder` and `dnssec.rrset.writeSignedData`;
-- `dnssec.denial.nsec3.hashName` with an explicit iteration cap.
+- `dnssec.denial.nsec3.hashName` with an explicit iteration cap;
+- `tsig.parse` followed by `tsig.validateSemantics`;
+- `update.validateRequest` over packets with OPCODE=UPDATE.
 
 The parser APIs do not allocate, so fuzz harnesses can run them with fixed stack/caller buffers and no allocator noise.

@@ -6,6 +6,8 @@ const name = @import("name.zig");
 const rdata = @import("rdata.zig");
 const validate = @import("validate.zig");
 const tcp = @import("tcp.zig");
+const tsig = @import("tsig.zig");
+const update = @import("update.zig");
 const types = @import("types.zig");
 
 const Lcg = struct {
@@ -219,6 +221,72 @@ test "dnssec signed RRset data is invariant to input record order" {
         try dnssec.rrset.writeSignedData(&writer_b, sig, set_b, sort_b[0..count], &compare_b);
 
         try std.testing.expectEqualSlices(u8, writer_a.written(), writer_b.written());
+    }
+}
+
+test "TSIG parser survives arbitrary RDATA" {
+    var rng: Lcg = .{ .state = 0x7516_a8f4_8945_0001 };
+    const root_packet = [_]u8{0};
+    const root = try name.Name.init(&root_packet, 0);
+    var rdata_buf: [512]u8 = undefined;
+
+    for (0..4096) |_| {
+        const len: usize = @intCast(rng.next() % (rdata_buf.len + 1));
+        for (rdata_buf[0..len]) |*b| b.* = rng.byte();
+        const rr: message.Record = .{
+            .packet = &root_packet,
+            .name = root,
+            .rr_type = .TSIG,
+            .class = .ANY,
+            .ttl = 0,
+            .rdata_offset = 0,
+            .rdata = rdata_buf[0..len],
+        };
+        const parsed = tsig.parse(rr) catch continue;
+        _ = tsig.validateSemantics(parsed, true) catch continue;
+    }
+}
+
+test "UPDATE prescan survives arbitrary update-shaped packets" {
+    var rng: Lcg = .{ .state = 0x2136_5eed_0000_0001 };
+    var bytes: [768]u8 = undefined;
+
+    for (0..4096) |_| {
+        const len: usize = @intCast(rng.next() % (bytes.len + 1));
+        for (bytes[0..len]) |*b| b.* = rng.byte();
+        if (len >= types.Header.wire_len) {
+            var flags = std.mem.readInt(u16, bytes[2..4], .big);
+            flags &= ~@as(u16, 0xF800); // QR=0 and clear the four opcode bits.
+            flags |= @as(u16, @intFromEnum(types.Opcode.update)) << 11;
+            std.mem.writeInt(u16, bytes[2..4], flags, .big);
+        }
+        const m = message.Message.init(bytes[0..len]) catch continue;
+        _ = update.validateRequest(m) catch continue;
+    }
+}
+
+test "UPDATE semantic composer round trips generated operations" {
+    var rng: Lcg = .{ .state = 0x2136_c0de_f00d_0001 };
+    var packet: [1024]u8 = undefined;
+    var compression: [32]builder.CompressionEntry = undefined;
+
+    for (0..256) |round| {
+        var composer = try update.Composer.init(&packet, &compression, @intCast(round), "example.com", .IN);
+        switch (rng.next() % 4) {
+            0 => try composer.requireNameExists("host.example.com"),
+            1 => try composer.requireRrsetExists("host.example.com", .A),
+            2 => try composer.requireRrsetNotExists("host.example.com", .AAAA),
+            else => try composer.requireA("host.example.com", .{ 192, 0, 2, @truncate(rng.next()) }),
+        }
+        switch (rng.next() % 4) {
+            0 => try composer.addA("host.example.com", @truncate(rng.next()), .{ 192, 0, 2, @truncate(rng.next()) }),
+            1 => try composer.deleteRrset("host.example.com", .TXT),
+            2 => try composer.deleteName("old.example.com"),
+            else => try composer.deleteA("old.example.com", .{ 192, 0, 2, @truncate(rng.next()) }),
+        }
+        const m = try message.Message.init(try composer.finish());
+        _ = try update.validateRequest(m);
+        _ = try validate.messageStrict(m, .{});
     }
 }
 
