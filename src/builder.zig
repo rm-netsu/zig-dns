@@ -128,7 +128,14 @@ pub const Builder = struct {
     pub fn addNameRecord(self: *Builder, section: types.Section, owner: []const u8, rr_type: types.Type, ttl: u32, target: []const u8) Error!void {
         var w = try self.beginRecord(section, owner, rr_type, .IN, ttl);
         errdefer w.abort();
-        try w.writeName(target);
+        if (rr_type == .DNAME) {
+            // RFC 6672 section 2.1: DNAME target names are never compressed.
+            var wire_buf: [name_mod.Name.max_wire_len]u8 = undefined;
+            const wire = try name_mod.writePresentationWire(target, &wire_buf);
+            try w.writeWireName(try name_mod.Uncompressed.init(wire));
+        } else {
+            try w.writeName(target);
+        }
         try w.finish();
     }
 

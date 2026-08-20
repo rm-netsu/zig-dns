@@ -85,9 +85,13 @@ pub fn knownRdata(rr: message.Record) Error!void {
     switch (rr.rr_type) {
         .A => _ = try rdata.a(rr),
         .AAAA => _ = try rdata.aaaa(rr),
-        .NS, .CNAME, .PTR, .DNAME => {
+        .NS, .CNAME, .PTR => {
             const n = try rdata.targetName(rr);
             if (try n.consumed() != rr.rdata.len) return error.InvalidRdata;
+        },
+        .DNAME => {
+            const name_len = try dnssec.validateUncompressedNameInRdata(rr, 0);
+            if (name_len != rr.rdata.len) return error.InvalidRdata;
         },
         .MX => {
             const v = try rdata.mx(rr);
@@ -164,4 +168,28 @@ test "strict validator accepts RFC 2136 meta-record RDATA semantics" {
     const m = try message.Message.init(try update.finish());
     _ = try messageStrict(m, .{});
     _ = try update_mod.validateRequest(m);
+}
+
+test "strict validator requires uncompressed DNAME target" {
+    const builder_mod = @import("builder.zig");
+    var buf: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var good = try builder_mod.Builder.init(&buf, &compression, 0x44, .{ .response = true });
+    try good.addQuestion("host.old.example", .A, .IN);
+    try good.addNameRecord(.answer, "old.example", .DNAME, 60, "new.example");
+    const good_message = try message.Message.init(try good.finish());
+    _ = try messageStrict(good_message, .{});
+
+    var answers = try good_message.records(.answer);
+    const dname = (try answers.next()).?;
+    try std.testing.expectEqual(dname.rdata.len, try name_mod.uncompressedConsumedLen(dname.packet, dname.rdata_offset));
+
+    var bad = try builder_mod.Builder.init(&buf, &compression, 0x45, .{ .response = true });
+    try bad.addQuestion("host.old.example", .A, .IN);
+    var rr = try bad.beginRecord(.answer, "old.example", .DNAME, .IN, 60);
+    try rr.writeBytes(&.{ 0xc0, 0x0c });
+    try rr.finish();
+    const bad_message = try message.Message.init(try bad.finish());
+    try std.testing.expectError(error.InvalidLabel, messageStrict(bad_message, .{}));
 }
