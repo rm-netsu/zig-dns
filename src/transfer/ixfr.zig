@@ -26,6 +26,7 @@ pub const Error = message.ParseError || rdata.Error || builder_mod.Error || soa_
     AmbiguousSerial,
     ClosingSoaMismatch,
     UnexpectedDataAfterCurrentVersion,
+    MissingFallbackQuestion,
     MessageNotDrained,
     AlreadyComplete,
     FailedTransfer,
@@ -75,6 +76,7 @@ pub const Transfer = struct {
     mode_value: ?Mode = null,
     phase: Phase = .awaiting_current,
     message_open: bool = false,
+    first_had_question: bool = false,
 
     pub fn init(
         storage: *Storage,
@@ -135,7 +137,8 @@ pub const Transfer = struct {
         const rcode = try m.rcode();
         const first = self.phase == .awaiting_current;
         const error_response = rcode != .no_error;
-        try self.validateQuestions(m, first, error_response);
+        try self.validateQuestions(m, error_response);
+        if (first) self.first_had_question = m.header.question_count != 0;
 
         if (error_response) {
             self.phase = .complete;
@@ -166,8 +169,11 @@ pub const Transfer = struct {
         return name_mod.Name.init(self.storage.zone[0..self.zone_len], 0);
     }
 
-    fn validateQuestions(self: Transfer, m: message.Message, first: bool, error_response: bool) Error!void {
-        if (first or error_response) {
+    fn validateQuestions(self: Transfer, m: message.Message, error_response: bool) Error!void {
+        // RFC 1995 does not require the Question section in an incremental
+        // response. Accept an omitted Question and validate it when present.
+        // Error responses retain the conventional copied Question contract.
+        if (error_response) {
             if (m.header.question_count != 1) return error.InvalidQuestionCount;
         } else if (m.header.question_count > 1) {
             return error.InvalidQuestionCount;
@@ -192,6 +198,13 @@ pub const Transfer = struct {
     fn fail(self: *Transfer) void {
         self.phase = .failed;
         self.message_open = false;
+    }
+
+    fn requireFallbackQuestion(self: Transfer) Error!void {
+        // RFC 1995 defines full-zone IXFR fallback as AXFR response behavior
+        // with QTYPE=IXFR. RFC 5936 therefore requires the first Question to
+        // be copied even though native incremental IXFR does not.
+        if (!self.first_had_question) return error.MissingFallbackQuestion;
     }
 };
 
@@ -278,6 +291,7 @@ pub const Cursor = struct {
         if (rr.rr_type == .SOA) {
             try self.transfer.validateZoneSoa(rr);
             if (try current.eqlRecord(&self.transfer.storage.current, rr)) {
+                try self.transfer.requireFallbackQuestion();
                 self.transfer.mode_value = .axfr_fallback;
                 self.transfer.phase = .complete;
                 self.pending = .{ .fallback_end = rr };
@@ -292,6 +306,7 @@ pub const Cursor = struct {
             return .{ .delete_begin = rr };
         }
 
+        try self.transfer.requireFallbackQuestion();
         self.transfer.mode_value = .axfr_fallback;
         self.transfer.phase = .fallback;
         self.pending = .{ .fallback_record = rr };
@@ -522,6 +537,23 @@ test "IXFR streams one incremental delta as semantic events" {
     try std.testing.expectEqual(Mode.incremental, transfer.mode().?);
 }
 
+test "IXFR incremental response may omit Question" {
+    var packet: [1536]u8 = undefined;
+    var compression: [48]builder_mod.CompressionEntry = undefined;
+    var builder = try responseBuilder(&packet, &compression, 0x2021, false);
+    try addSoa(&builder, 3);
+    try addSoa(&builder, 1);
+    try addSoa(&builder, 3);
+    try addSoa(&builder, 3);
+
+    var storage: Storage = .{};
+    var transfer = try Transfer.init(&storage, 0x2021, "example.com", .IN, 1);
+    var cursor = try transfer.openMessage(try message.Message.init(try builder.finish()));
+    while (try cursor.next()) |_| {}
+    try transfer.finish();
+    try std.testing.expectEqual(Mode.incremental, transfer.mode().?);
+}
+
 test "IXFR streams several deltas across DNS message boundaries" {
     var first_packet: [1536]u8 = undefined;
     var first_compression: [48]builder_mod.CompressionEntry = undefined;
@@ -594,6 +626,22 @@ test "IXFR detects AXFR fallback without materializing the zone" {
     try std.testing.expect((try cursor.next()).? == .fallback_end);
     try transfer.finish();
     try std.testing.expectEqual(Mode.axfr_fallback, transfer.mode().?);
+}
+
+test "IXFR AXFR fallback requires first Question" {
+    var packet: [1536]u8 = undefined;
+    var compression: [48]builder_mod.CompressionEntry = undefined;
+    var builder = try responseBuilder(&packet, &compression, 0x4041, false);
+    try addSoa(&builder, 9);
+    try builder.addA(.answer, "www.example.com", 60, .{ 192, 0, 2, 9 });
+    try addSoa(&builder, 9);
+
+    var storage: Storage = .{};
+    var transfer = try Transfer.init(&storage, 0x4041, "example.com", .IN, 1);
+    var cursor = try transfer.openMessage(try message.Message.init(try builder.finish()));
+    try std.testing.expect((try cursor.next()).? == .begin);
+    try std.testing.expectError(error.MissingFallbackQuestion, cursor.next());
+    try std.testing.expectError(error.FailedTransfer, transfer.finish());
 }
 
 test "IXFR recognizes current client with a single SOA" {
