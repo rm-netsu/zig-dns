@@ -57,6 +57,26 @@ pub const Key = struct {
     name: name_mod.Uncompressed,
     algorithm: Algorithm = .hmac_sha256,
     secret: []const u8,
+
+    /// Build a SHA-256 TSIG key without allocating. `name_storage` remains
+    /// caller-owned and must outlive the Key. Secret bytes are borrowed too.
+    pub fn init(presentation_name: []const u8, secret: []const u8, name_storage: []u8) Error!Key {
+        return initWithAlgorithm(presentation_name, .hmac_sha256, secret, name_storage);
+    }
+
+    pub fn initWithAlgorithm(
+        presentation_name: []const u8,
+        algorithm: Algorithm,
+        secret: []const u8,
+        name_storage: []u8,
+    ) Error!Key {
+        const wire = try name_mod.writePresentationWire(presentation_name, name_storage);
+        return .{
+            .name = try name_mod.Uncompressed.init(wire),
+            .algorithm = algorithm,
+            .secret = secret,
+        };
+    }
 };
 
 pub const TruncationPolicy = struct {
@@ -697,4 +717,13 @@ test "TSIG signed BADTIME response carries client and server times" {
     try record_mod.validateSemantics(parsed, true);
     try verify(m, parsed, key, .{ .now = 1_700_000_000, .request_mac = request_mac.slice() });
     try std.testing.expectEqual(@as(u64, 1_700_001_000), try parsed.badTimeServerTime());
+}
+
+test "TSIG Key.init uses caller-owned name storage" {
+    var name_storage: [name_mod.Name.max_wire_len]u8 = undefined;
+    const key = try Key.init("Key.Example", "borrowed secret", &name_storage);
+    try std.testing.expectEqual(Algorithm.hmac_sha256, key.algorithm);
+    try std.testing.expectEqualStrings("borrowed secret", key.secret);
+    const n = try name_mod.Name.init(key.name.bytes, 0);
+    try std.testing.expect(try n.eqlPresentationIgnoreCase("key.example"));
 }

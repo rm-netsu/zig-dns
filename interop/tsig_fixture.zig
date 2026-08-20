@@ -1,10 +1,6 @@
 const std = @import("std");
 const dns = @import("dns");
 
-fn wireName(presentation: []const u8, out: []u8) !dns.name.Uncompressed {
-    return dns.name.Uncompressed.init(try dns.name.writePresentationWire(presentation, out));
-}
-
 fn printHex(label: []const u8, bytes: []const u8) void {
     std.debug.print("{s}=", .{label});
     for (bytes) |b| std.debug.print("{x:0>2}", .{b});
@@ -13,10 +9,7 @@ fn printHex(label: []const u8, bytes: []const u8) void {
 
 pub fn main() !void {
     var key_name_buf: [64]u8 = undefined;
-    const key: dns.tsig.auth.Key = .{
-        .name = try wireName("key.example", &key_name_buf),
-        .secret = "shared secret bytes",
-    };
+    const key = try dns.tsig.auth.Key.init("key.example", "shared secret bytes", &key_name_buf);
 
     var request_buf: [512]u8 = undefined;
     var request_compression: [16]dns.CompressionEntry = undefined;
