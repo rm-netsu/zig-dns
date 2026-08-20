@@ -104,3 +104,13 @@ test "fixed transactions match out of order responses" {
     try std.testing.expectEqual(@as(usize, 1), got.index);
     try std.testing.expectEqual(@as(usize, 1), tx.activeCount());
 }
+
+test {
+    // Keep resolver semantic submodules in the normal test graph. Zig lazily
+    // analyzes imported declarations, so referencing only `resolver.zig` is
+    // not sufficient to guarantee their test blocks stay compile-checked.
+    _ = response;
+    _ = alias;
+    _ = referral;
+    _ = retry;
+}
