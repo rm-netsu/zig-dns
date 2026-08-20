@@ -54,8 +54,7 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             if (owner.len != 0) return error.InvalidOptOwner;
             const opt = try edns.Opt.fromRecord(rr);
             if (options.require_edns_version_zero and opt.version != 0) return error.UnsupportedEdnsVersion;
-            var oi = opt.iterator();
-            while (try oi.next()) |_| {}
+            try edns.validateOptions(opt, m.header.flags.response);
             result.opt = opt;
         } else if (rr.rr_type == .TSIG) {
             if (result.tsig != null) return error.MultipleTsig;
@@ -192,4 +191,59 @@ test "strict validator requires uncompressed DNAME target" {
     try rr.finish();
     const bad_message = try message.Message.init(try bad.finish());
     try std.testing.expectError(error.InvalidLabel, messageStrict(bad_message, .{}));
+}
+
+test "strict validator enforces first COOKIE semantics" {
+    const builder_mod = @import("builder.zig");
+
+    const client: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    var option_buf: [64]u8 = undefined;
+    var options = edns.OptionBuilder.init(&option_buf);
+    try options.addCookie(client, null);
+    // RFC 7873 says later COOKIE options are ignored. Their option framing
+    // still has to be valid, but their COOKIE payload is not interpreted.
+    try options.add(.COOKIE, &.{0});
+
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var b = try builder_mod.Builder.init(&packet, &compression, 0x8001, .{});
+    try b.addQuestion("example.com", .A, .IN);
+    try b.addOpt(1232, 0, 0, .{}, options.bytes());
+    _ = try messageStrict(try message.Message.init(try b.finish()), .{});
+
+    var malformed_options = edns.OptionBuilder.init(&option_buf);
+    try malformed_options.add(.COOKIE, &.{0});
+    var bad = try builder_mod.Builder.init(&packet, &compression, 0x8002, .{});
+    try bad.addQuestion("example.com", .A, .IN);
+    try bad.addOpt(1232, 0, 0, .{}, malformed_options.bytes());
+    try std.testing.expectError(error.InvalidCookie, messageStrict(try message.Message.init(try bad.finish()), .{}));
+}
+
+test "strict validator checks TCP keepalive direction" {
+    const builder_mod = @import("builder.zig");
+
+    var option_buf: [16]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var query_options = edns.OptionBuilder.init(&option_buf);
+    try query_options.addKeepaliveRequest();
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8101, .{});
+    try query.addQuestion("example.com", .A, .IN);
+    try query.addOpt(1232, 0, 0, .{}, query_options.bytes());
+    _ = try messageStrict(try message.Message.init(try query.finish()), .{});
+
+    var wrong_query_options = edns.OptionBuilder.init(&option_buf);
+    try wrong_query_options.addKeepaliveResponse(100);
+    var wrong_query = try builder_mod.Builder.init(&packet, &compression, 0x8102, .{});
+    try wrong_query.addQuestion("example.com", .A, .IN);
+    try wrong_query.addOpt(1232, 0, 0, .{}, wrong_query_options.bytes());
+    try std.testing.expectError(error.InvalidKeepalive, messageStrict(try message.Message.init(try wrong_query.finish()), .{}));
+
+    var response_options = edns.OptionBuilder.init(&option_buf);
+    try response_options.addKeepaliveResponse(100);
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8103, .{ .response = true });
+    try response.addQuestion("example.com", .A, .IN);
+    try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
+    _ = try messageStrict(try message.Message.init(try response.finish()), .{});
 }

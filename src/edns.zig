@@ -1,8 +1,13 @@
 const std = @import("std");
 const message = @import("message.zig");
+const cookie_mod = @import("edns/cookie.zig");
+const keepalive_mod = @import("edns/keepalive.zig");
+
+pub const cookie = cookie_mod;
+pub const keepalive = keepalive_mod;
 
 pub const OptionCode = enum(u16) { NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -66,6 +71,74 @@ pub const Iterator = struct {
     }
 };
 
+pub const Cookie = cookie_mod.Cookie;
+pub fn parseCookie(opt: Option) Error!Cookie {
+    if (opt.code != .COOKIE) return error.InvalidOption;
+    return cookie_mod.parse(opt.data) catch error.InvalidCookie;
+}
+
+/// Returns the first COOKIE option, matching RFC 7873 multiple-option rules.
+pub fn firstCookie(opt: Opt) Error!?Cookie {
+    var iterator = opt.iterator();
+    while (try iterator.next()) |option| {
+        if (option.code == .COOKIE) return try parseCookie(option);
+    }
+    return null;
+}
+
+/// RFC 7873 client-side response validation for an expected Client Cookie.
+///
+/// When `required` is true, absence of COOKIE is an error. If COOKIE exists,
+/// only the first instance is considered and its echoed Client Cookie must
+/// match; the returned Server Cookie borrows from the OPT RDATA.
+pub fn validateCookieResponse(opt: ?Opt, expected_client: [cookie_mod.client_length]u8, required: bool) Error!?[]const u8 {
+    const value = if (opt) |present| try firstCookie(present) else null;
+    const cookie_value = value orelse {
+        if (required) return error.MissingCookie;
+        return null;
+    };
+    return cookie_mod.validateResponse(cookie_value, expected_client) catch |err| switch (err) {
+        error.IncorrectClientCookie => error.IncorrectClientCookie,
+        error.MissingServerCookie => error.MissingServerCookie,
+    };
+}
+
+pub const Keepalive = keepalive_mod.Keepalive;
+pub fn parseKeepalive(opt: Option) Error!Keepalive {
+    if (opt.code != .KEEPALIVE) return error.InvalidOption;
+    return keepalive_mod.parse(opt.data) catch error.InvalidKeepalive;
+}
+
+pub fn validateKnownOption(opt: Option, response: bool) Error!void {
+    switch (opt.code) {
+        .ECS => _ = try clientSubnet(opt),
+        .COOKIE => _ = try parseCookie(opt),
+        .KEEPALIVE => {
+            const value = try parseKeepalive(opt);
+            switch (value) {
+                .request => if (response) return error.InvalidKeepalive,
+                .timeout => if (!response) return error.InvalidKeepalive,
+            }
+        },
+        .EDE => _ = try extendedError(opt),
+        else => {},
+    }
+}
+
+pub fn validateOptions(opt: Opt, response: bool) Error!void {
+    var iterator = opt.iterator();
+    var seen_cookie = false;
+    while (try iterator.next()) |option| {
+        // RFC 7873 requires only the first COOKIE option to be considered;
+        // later COOKIE options are ignored rather than interpreted.
+        if (option.code == .COOKIE) {
+            if (seen_cookie) continue;
+            seen_cookie = true;
+        }
+        try validateKnownOption(option, response);
+    }
+}
+
 pub const ExtendedError = struct { info_code: u16, extra_text: []const u8 };
 pub fn extendedError(opt: Option) Error!ExtendedError {
     if (opt.code != .EDE or opt.data.len < 2) return error.InvalidOption;
@@ -107,6 +180,33 @@ pub const OptionBuilder = struct {
         @memcpy(self.out[self.pos + 4 ..][0..data.len], data);
         self.pos += 4 + data.len;
     }
+    pub fn addCookie(self: *OptionBuilder, client: [cookie_mod.client_length]u8, server: ?[]const u8) (error{ NoSpace, InvalidCookie })!void {
+        const data_len = cookie_mod.validateServerLength(server) catch return error.InvalidCookie;
+        if (self.pos + 4 + data_len > self.out.len) return error.NoSpace;
+
+        const start = self.pos;
+        std.mem.writeInt(u16, self.out[start..][0..2], @intFromEnum(OptionCode.COOKIE), .big);
+        std.mem.writeInt(u16, self.out[start + 2 ..][0..2], @intCast(data_len), .big);
+        @memcpy(self.out[start + 4 ..][0..cookie_mod.client_length], &client);
+        if (server) |server_bytes| {
+            @memcpy(self.out[start + 4 + cookie_mod.client_length ..][0..server_bytes.len], server_bytes);
+        }
+        self.pos += 4 + data_len;
+    }
+
+    pub fn addKeepaliveRequest(self: *OptionBuilder) error{NoSpace}!void {
+        try self.add(.KEEPALIVE, &.{});
+    }
+
+    pub fn addKeepaliveResponse(self: *OptionBuilder, timeout_units: u16) error{NoSpace}!void {
+        if (self.pos + 6 > self.out.len) return error.NoSpace;
+        const start = self.pos;
+        std.mem.writeInt(u16, self.out[start..][0..2], @intFromEnum(OptionCode.KEEPALIVE), .big);
+        std.mem.writeInt(u16, self.out[start + 2 ..][0..2], 2, .big);
+        std.mem.writeInt(u16, self.out[start + 4 ..][0..2], timeout_units, .big);
+        self.pos += 6;
+    }
+
     pub fn addClientSubnet(self: *OptionBuilder, family: u16, source_prefix: u8, scope_prefix: u8, full_address: []const u8) (error{ NoSpace, InvalidClientSubnet })!void {
         const max_bits: u8 = switch (family) {
             1 => 32,
@@ -173,4 +273,52 @@ test "ECS builder truncates and canonicalizes address prefix" {
     const ecs = try clientSubnet(opt);
     try std.testing.expectEqual(@as(u8, 17), ecs.source_prefix);
     try std.testing.expectEqualSlices(u8, &.{ 192, 0, 0x80 }, ecs.address);
+}
+
+test "COOKIE builder is transactional and typed" {
+    const client: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    const server: [16]u8 = .{0xaa} ** 16;
+    var out: [44]u8 = undefined;
+    var b = OptionBuilder.init(&out);
+    try b.addCookie(client, &server);
+
+    var it: Iterator = .{ .bytes = b.bytes() };
+    const parsed = try parseCookie((try it.next()).?);
+    try std.testing.expectEqual(client, parsed.client);
+    try std.testing.expectEqualSlices(u8, &server, parsed.server.?);
+
+    const before = b.pos;
+    try std.testing.expectError(error.InvalidCookie, b.addCookie(client, &([_]u8{0} ** 7)));
+    try std.testing.expectEqual(before, b.pos);
+}
+
+test "TCP keepalive builders preserve RFC 7828 forms" {
+    var out: [16]u8 = undefined;
+    var b = OptionBuilder.init(&out);
+    try b.addKeepaliveRequest();
+    try b.addKeepaliveResponse(123);
+
+    var it: Iterator = .{ .bytes = b.bytes() };
+    try std.testing.expectEqual(Keepalive.request, try parseKeepalive((try it.next()).?));
+    const response = try parseKeepalive((try it.next()).?);
+    try std.testing.expectEqual(@as(u16, 123), response.timeout);
+    try std.testing.expectEqual(@as(?u32, 12_300), response.timeoutMilliseconds());
+}
+
+test "client cookie response validation uses first COOKIE only" {
+    const client: [8]u8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 };
+    const server: [16]u8 = .{0x42} ** 16;
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addCookie(client, &server);
+    try builder.add(.COOKIE, &.{0});
+
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    try std.testing.expectEqualSlices(u8, &server, (try validateCookieResponse(opt, client, true)).?);
+
+    var wrong = client;
+    wrong[0] ^= 1;
+    try std.testing.expectError(error.IncorrectClientCookie, validateCookieResponse(opt, wrong, true));
+    try std.testing.expectError(error.MissingCookie, validateCookieResponse(null, client, true));
+    try std.testing.expectEqual(@as(?[]const u8, null), try validateCookieResponse(null, client, false));
 }
