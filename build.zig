@@ -97,6 +97,17 @@ pub fn build(b: *std.Build) void {
     const update_example_step = b.step("example-update", "Run the signed DNS UPDATE example");
     update_example_step.dependOn(&b.addRunArtifact(update_example).step);
 
+    const transfer_example_mod = b.createModule(.{
+        .root_source_file = b.path("examples/transfer.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const transfer_example = b.addExecutable(.{ .name = "dns-transfer-example", .root_module = transfer_example_mod });
+    check.dependOn(&transfer_example.step);
+    const transfer_example_step = b.step("example-transfer", "Run the streaming AXFR example");
+    transfer_example_step.dependOn(&b.addRunArtifact(transfer_example).step);
+
     const tsig_fixture_mod = b.createModule(.{
         .root_source_file = b.path("interop/tsig_fixture.zig"),
         .target = target,

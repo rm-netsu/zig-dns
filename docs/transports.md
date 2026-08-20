@@ -24,12 +24,19 @@ A TCP resolver may pipeline multiple queries. `resolver.FixedTransactions` match
 
 ## DNS over QUIC
 
-Each DoQ query/response uses a single bidirectional QUIC stream. `doq.StreamDecoder` wraps the common two-octet framing while additionally enforcing:
+Each DoQ query/response transaction uses a single bidirectional QUIC stream. `doq.StreamDecoder` wraps the common two-octet framing while additionally enforcing:
 
-- exactly one DNS message on the stream;
 - DNS Message ID equal to zero;
 - query/response role;
 - complete stream EOF.
+
+Choose the stream cardinality explicitly:
+
+- `.query` — exactly one client query;
+- `.single_response` — exactly one ordinary response;
+- `.multi_response` — one or more response messages, as required by AXFR/IXFR.
+
+For `.multi_response`, STREAM FIN ends the framing layer; the AXFR/IXFR state machine independently verifies that the logical transfer reached its closing SOA.
 
 QUIC connection and stream creation remain outside the package.
 

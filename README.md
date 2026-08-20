@@ -133,7 +133,7 @@ switch (feed.event) {
 Use `feed.consumed` to process coalesced messages. `finish()` detects truncated EOF.
 
 - `dns.dot` reuses DNS-over-TCP framing and publishes DoT transport constants.
-- `dns.doq.StreamDecoder` enforces one framed message per QUIC stream and ID=0.
+- `dns.doq.StreamDecoder` enforces DoQ ID/role/cardinality and supports multi-response AXFR/IXFR streams.
 - `dns.doh` provides `application/dns-message` constants and base64url GET encoding/decoding.
 
 The library does **not** own TCP sockets, TLS sessions, QUIC streams, or HTTP requests.
@@ -195,6 +195,7 @@ These can be layered above the wire/core APIs without forcing their resource mod
 
 - [`docs/architecture.md`](docs/architecture.md) — ownership, parsing, encoding, and layering.
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
+- [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
 - [`docs/tsig.md`](docs/tsig.md) — RFC 8945 signing, verification, error semantics, and multi-message chaining.
 - [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and NOTIFY composition/validation.
