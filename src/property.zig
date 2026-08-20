@@ -1,6 +1,7 @@
 const std = @import("std");
 const builder = @import("builder.zig");
 const dnssec = @import("dnssec.zig");
+const edns = @import("edns.zig");
 const message = @import("message.zig");
 const name = @import("name.zig");
 const rdata = @import("rdata.zig");
@@ -67,6 +68,87 @@ test "builder parser round trips deterministic name corpus" {
         var ri = try m.records(.answer);
         const rr = (try ri.next()).?;
         try std.testing.expect(try rr.name.eqlPresentationIgnoreCase(qname));
+    }
+}
+
+test "operational EDNS parsers survive arbitrary payloads" {
+    var rng: Lcg = .{ .state = 0xed05_9660_9664_0001 };
+    var payload: [64]u8 = undefined;
+
+    for (0..4096) |_| {
+        const len: usize = @intCast(rng.next() % (payload.len + 1));
+        for (payload[0..len]) |*b| b.* = rng.byte();
+        const data = payload[0..len];
+
+        switch (rng.next() % 6) {
+            0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
+            1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
+            2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
+            3 => _ = edns.parseUpdateLease(.{ .code = .UPDATE_LEASE, .data = data }) catch continue,
+            4 => _ = edns.parseZoneVersion(.{ .code = .ZONEVERSION, .data = data }, false) catch continue,
+            else => _ = edns.parseZoneVersion(.{ .code = .ZONEVERSION, .data = data }, true) catch continue,
+        }
+    }
+}
+
+test "operational EDNS builders round trip deterministic generated values" {
+    var rng: Lcg = .{ .state = 0xed05_c00c_1eaf_0001 };
+    var option_bytes: [128]u8 = undefined;
+
+    for (0..512) |_| {
+        var options = edns.OptionBuilder.init(&option_bytes);
+        switch (rng.next() % 5) {
+            0 => {
+                var client: [edns.cookie.client_length]u8 = undefined;
+                for (&client) |*b| b.* = rng.byte();
+                var server: [edns.cookie.server_max_length]u8 = undefined;
+                for (&server) |*b| b.* = rng.byte();
+                const server_len: usize = edns.cookie.server_min_length + @as(usize, @intCast(rng.next() % (edns.cookie.server_max_length - edns.cookie.server_min_length + 1)));
+                try options.addCookie(client, server[0..server_len]);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const value = try edns.parseCookie((try it.next()).?);
+                try std.testing.expectEqualSlices(u8, &client, &value.client);
+                try std.testing.expectEqualSlices(u8, server[0..server_len], value.server.?);
+            },
+            1 => {
+                const timeout: u16 = @truncate(rng.next());
+                try options.addKeepaliveResponse(timeout);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const value = try edns.parseKeepalive((try it.next()).?);
+                try std.testing.expectEqual(timeout, value.timeout);
+            },
+            2 => {
+                const code: edns.ExtendedErrorCode = @enumFromInt(@as(u16, @truncate(rng.next())));
+                var text: [24]u8 = undefined;
+                const text_len: usize = @intCast(rng.next() % (text.len + 1));
+                for (text[0..text_len]) |*b| b.* = 'a' + @as(u8, @intCast(rng.next() % 26));
+                try options.addExtendedErrorCode(code, text[0..text_len]);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const value = try edns.extendedError((try it.next()).?);
+                try std.testing.expectEqual(@as(u16, @intFromEnum(code)), value.info_code);
+                try std.testing.expectEqualSlices(u8, text[0..text_len], value.extra_text);
+            },
+            3 => {
+                const value: edns.UpdateLease = .{
+                    .lease = @truncate(rng.next()),
+                    .key_lease = if ((rng.next() & 1) == 0) null else @as(u32, @truncate(rng.next())),
+                };
+                try options.addUpdateLease(value);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseUpdateLease((try it.next()).?);
+                try std.testing.expectEqual(value.lease, parsed.lease);
+                try std.testing.expectEqual(value.key_lease, parsed.key_lease);
+            },
+            else => {
+                const labels: u8 = @intCast(rng.next() % 16);
+                const serial: u32 = @truncate(rng.next());
+                try options.addZoneVersionSoaSerial(labels, serial);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseZoneVersion((try it.next()).?, true);
+                try std.testing.expectEqual(labels, parsed.response.label_count);
+                try std.testing.expectEqual(@as(?u32, serial), parsed.response.soaSerial());
+            },
+        }
     }
 }
 
