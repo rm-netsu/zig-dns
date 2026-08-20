@@ -9,6 +9,7 @@ const tcp = @import("tcp.zig");
 const tsig = @import("tsig.zig");
 const update = @import("update.zig");
 const types = @import("types.zig");
+const transfer = @import("transfer.zig");
 
 const Lcg = struct {
     state: u64,
@@ -287,6 +288,58 @@ test "UPDATE semantic composer round trips generated operations" {
         const m = try message.Message.init(try composer.finish());
         _ = try update.validateRequest(m);
         _ = try validate.messageStrict(m, .{});
+    }
+}
+
+test "IXFR state machine round trips generated deltas and survives mutations" {
+    var rng: Lcg = .{ .state = 0x1995_5936_9103_0001 };
+    var packet: [4096]u8 = undefined;
+    var compression: [128]builder.CompressionEntry = undefined;
+    var mutated: [4096]u8 = undefined;
+
+    for (0..256) |round| {
+        const delta_count: usize = 1 + @as(usize, @intCast(rng.next() % 3));
+        const requested: u32 = @truncate(rng.next());
+        const current = requested +% @as(u32, @intCast(delta_count));
+        var b = try builder.Builder.init(&packet, &compression, @intCast(round), .{
+            .response = true,
+            .authoritative = true,
+        });
+        try b.addQuestion("example.com", .IXFR, .IN);
+        try b.addSoa(.answer, "example.com", 300, "ns1.example.com", "hostmaster.example.com", current, 3600, 600, 86400, 300);
+
+        var serial = requested;
+        for (0..delta_count) |delta| {
+            try b.addSoa(.answer, "example.com", 300, "ns1.example.com", "hostmaster.example.com", serial, 3600, 600, 86400, 300);
+            try b.addA(.answer, "changed.example.com", 60, .{ 192, 0, @truncate(delta), @truncate(rng.next()) });
+            serial +%= 1;
+            try b.addSoa(.answer, "example.com", 300, "ns1.example.com", "hostmaster.example.com", serial, 3600, 600, 86400, 300);
+            try b.addA(.answer, "changed.example.com", 60, .{ 198, 51, @truncate(delta), @truncate(rng.next()) });
+        }
+        try b.addSoa(.answer, "example.com", 300, "ns1.example.com", "hostmaster.example.com", current, 3600, 600, 86400, 300);
+        const wire = try b.finish();
+
+        var storage: transfer.ixfr.Storage = .{};
+        var state = try transfer.ixfr.Transfer.init(&storage, @intCast(round), "example.com", .IN, requested);
+        var cursor = try state.openMessage(try message.Message.init(wire));
+        var events: usize = 0;
+        while (try cursor.next()) |_| events += 1;
+        try state.finish();
+        try std.testing.expectEqual(2 + 5 * delta_count, events);
+
+        // Replay one deterministic mutation of each otherwise-valid response.
+        // Any protocol error is acceptable; memory unsafety or unbounded work is not.
+        @memcpy(mutated[0..wire.len], wire);
+        const flip_at: usize = @intCast(rng.next() % wire.len);
+        mutated[flip_at] ^= @as(u8, 1) << @intCast(rng.next() % 8);
+        const mutated_message = message.Message.init(mutated[0..wire.len]) catch continue;
+        var mutated_storage: transfer.ixfr.Storage = .{};
+        var mutated_state = try transfer.ixfr.Transfer.init(&mutated_storage, @intCast(round), "example.com", .IN, requested);
+        var mutated_cursor = mutated_state.openMessage(mutated_message) catch continue;
+        while (true) {
+            const event = mutated_cursor.next() catch break;
+            if (event == null) break;
+        }
     }
 }
 
