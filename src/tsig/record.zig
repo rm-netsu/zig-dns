@@ -128,6 +128,63 @@ pub const Fields = struct {
     other_data: []const u8 = &.{},
 };
 
+/// Exact wire size of one uncompressed TSIG RR, including owner name and the
+/// fixed RR header. This is useful for reserving UDP response tail space before
+/// the unsigned message is composed.
+pub fn wireSize(key_name: name_mod.Uncompressed, fields: Fields) Error!usize {
+    try validateFields(fields);
+    const rdata_len = fields.algorithm.bytes.len + 16 + fields.mac.len + fields.other_data.len;
+    if (rdata_len > std.math.maxInt(u16)) return error.RdataTooLong;
+    return key_name.bytes.len + 10 + rdata_len;
+}
+
+/// Encode one complete TSIG RR into caller-owned storage without compression.
+/// All fallible validation and capacity checks happen before the first write,
+/// so `NoSpace` and malformed-field failures leave `out` untouched.
+pub fn encodeWire(out: []u8, key_name: name_mod.Uncompressed, fields: Fields) Error![]const u8 {
+    const needed = try wireSize(key_name, fields);
+    if (out.len < needed) return error.NoSpace;
+
+    const rdata_len: u16 = @intCast(fields.algorithm.bytes.len + 16 + fields.mac.len + fields.other_data.len);
+    var pos: usize = 0;
+    @memcpy(out[pos..][0..key_name.bytes.len], key_name.bytes);
+    pos += key_name.bytes.len;
+    std.mem.writeInt(u16, out[pos..][0..2], @intFromEnum(types.Type.TSIG), .big);
+    pos += 2;
+    std.mem.writeInt(u16, out[pos..][0..2], @intFromEnum(types.Class.ANY), .big);
+    pos += 2;
+    std.mem.writeInt(u32, out[pos..][0..4], 0, .big);
+    pos += 4;
+    std.mem.writeInt(u16, out[pos..][0..2], rdata_len, .big);
+    pos += 2;
+
+    @memcpy(out[pos..][0..fields.algorithm.bytes.len], fields.algorithm.bytes);
+    pos += fields.algorithm.bytes.len;
+    std.mem.writeInt(u48, out[pos..][0..6], @intCast(fields.time_signed), .big);
+    pos += 6;
+    std.mem.writeInt(u16, out[pos..][0..2], fields.fudge, .big);
+    pos += 2;
+    std.mem.writeInt(u16, out[pos..][0..2], @intCast(fields.mac.len), .big);
+    pos += 2;
+    @memcpy(out[pos..][0..fields.mac.len], fields.mac);
+    pos += fields.mac.len;
+    std.mem.writeInt(u16, out[pos..][0..2], fields.original_id, .big);
+    pos += 2;
+    std.mem.writeInt(u16, out[pos..][0..2], @intFromEnum(fields.error_code), .big);
+    pos += 2;
+    std.mem.writeInt(u16, out[pos..][0..2], @intCast(fields.other_data.len), .big);
+    pos += 2;
+    @memcpy(out[pos..][0..fields.other_data.len], fields.other_data);
+    pos += fields.other_data.len;
+    std.debug.assert(pos == needed);
+    return out[0..pos];
+}
+
+fn validateFields(fields: Fields) Error!void {
+    if (fields.time_signed > max_time_signed) return error.TimeSignedOutOfRange;
+    if (fields.mac.len > std.math.maxInt(u16) or fields.other_data.len > std.math.maxInt(u16)) return error.FieldTooLong;
+}
+
 /// Append a TSIG RR using a presentation-format key name. The operation is
 /// transactional through Builder.RecordWriter. Callers are expected to append
 /// TSIG only after every other Additional record; strict validation enforces
@@ -149,8 +206,7 @@ pub fn appendWire(builder: *builder_mod.Builder, key_name: name_mod.Uncompressed
 }
 
 fn writeRdata(w: *builder_mod.RecordWriter, fields: Fields) Error!void {
-    if (fields.time_signed > max_time_signed) return error.TimeSignedOutOfRange;
-    if (fields.mac.len > std.math.maxInt(u16) or fields.other_data.len > std.math.maxInt(u16)) return error.FieldTooLong;
+    try validateFields(fields);
 
     try w.writeWireName(fields.algorithm);
     var time_buf: [6]u8 = undefined;
@@ -167,6 +223,29 @@ fn writeRdata(w: *builder_mod.RecordWriter, fields: Fields) Error!void {
 
 fn wireName(presentation: []const u8, out: []u8) !name_mod.Uncompressed {
     return name_mod.Uncompressed.init(try name_mod.writePresentationWire(presentation, out));
+}
+
+test "TSIG standalone wire encoder is exact and transactional" {
+    var key_buf: [64]u8 = undefined;
+    var algorithm_buf: [64]u8 = undefined;
+    const key = try wireName("key.example", &key_buf);
+    const algorithm = try wireName("hmac-sha256", &algorithm_buf);
+    const fields: Fields = .{
+        .algorithm = algorithm,
+        .time_signed = 1_700_000_000,
+        .mac = &.{ 1, 2, 3, 4 },
+        .original_id = 0x1234,
+    };
+    const needed = try wireSize(key, fields);
+    var out: [128]u8 = [_]u8{0xa5} ** 128;
+    try std.testing.expectError(error.NoSpace, encodeWire(out[0 .. needed - 1], key, fields));
+    for (out[0 .. needed - 1]) |byte| try std.testing.expectEqual(@as(u8, 0xa5), byte);
+
+    const encoded = try encodeWire(&out, key, fields);
+    try std.testing.expectEqual(needed, encoded.len);
+    const owner_len = key.bytes.len;
+    try std.testing.expectEqual(@intFromEnum(types.Type.TSIG), std.mem.readInt(u16, encoded[owner_len..][0..2], .big));
+    try std.testing.expectEqual(@intFromEnum(types.Class.ANY), std.mem.readInt(u16, encoded[owner_len + 2 ..][0..2], .big));
 }
 
 test "TSIG parser and typed builder round trip RFC 8945 fields" {

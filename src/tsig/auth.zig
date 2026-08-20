@@ -130,6 +130,37 @@ pub const Mac = struct {
     }
 };
 
+pub const InPlaceResult = struct {
+    bytes: []const u8,
+    mac: Mac,
+
+    pub fn deinit(self: *InPlaceResult) void {
+        self.mac.deinit();
+        self.bytes = &.{};
+    }
+};
+
+/// Exact number of bytes that signing will append as the final TSIG RR.
+/// `is_response` is explicit so invalid signed BADKEY/BADSIG response forms can
+/// be rejected before a response composer reserves space for them.
+pub fn signedRecordWireSize(key: Key, options: SignOptions, is_response: bool) Error!usize {
+    if (options.time_signed > record_mod.max_time_signed) return error.TimeSignedOutOfRange;
+    if (options.other_data.len > std.math.maxInt(u16)) return error.FieldTooLong;
+    try validateSignSemantics(is_response, options);
+    const wanted = options.mac_len orelse @as(u8, @intCast(key.algorithm.macLen()));
+    try validateGeneratedMacLen(key.algorithm, wanted);
+    var placeholder: [max_mac_len]u8 = undefined;
+    return record_mod.wireSize(key.name, .{
+        .algorithm = key.algorithm.wireName(),
+        .time_signed = options.time_signed,
+        .fudge = options.fudge,
+        .mac = placeholder[0..wanted],
+        .original_id = options.original_id orelse 0,
+        .error_code = options.error_code,
+        .other_data = options.other_data,
+    });
+}
+
 const HmacState = union(Algorithm) {
     hmac_sha1: HmacSha1,
     hmac_sha256: HmacSha256,
@@ -230,6 +261,39 @@ pub fn signBuilder(builder: *builder_mod.Builder, key: Key, options: SignOptions
         .other_data = options.other_data,
     });
     return mac;
+}
+
+/// Sign an already-finished DNS message in place and append TSIG as the final
+/// Additional RR. `buffer[0..unsigned_len]` is the unsigned message; spare
+/// capacity after it remains caller-owned. The operation is transactional for
+/// all expected local failures: capacity, field validation, MAC policy and
+/// ARCOUNT overflow are checked before any output byte is modified.
+pub fn signInPlace(buffer: []u8, unsigned_len: usize, key: Key, options: SignOptions) Error!InPlaceResult {
+    if (unsigned_len > buffer.len or unsigned_len < types.Header.wire_len or unsigned_len > message.Message.max_wire_len) return error.InvalidMessage;
+    const unsigned = buffer[0..unsigned_len];
+    const header = try types.Header.parse(unsigned);
+    if (header.additional_count == std.math.maxInt(u16)) return error.TooManyRecords;
+
+    const tail_len = try signedRecordWireSize(key, options, header.flags.response);
+    if (tail_len > message.Message.max_wire_len - unsigned_len or unsigned_len + tail_len > buffer.len) return error.NoSpace;
+
+    var mac = try sign(unsigned, key, options);
+    errdefer mac.deinit();
+    const tail = try record_mod.encodeWire(buffer[unsigned_len .. unsigned_len + tail_len], key.name, .{
+        .algorithm = key.algorithm.wireName(),
+        .time_signed = options.time_signed,
+        .fudge = options.fudge,
+        .mac = mac.slice(),
+        .original_id = options.original_id orelse header.id,
+        .error_code = options.error_code,
+        .other_data = options.other_data,
+    });
+    std.debug.assert(tail.len == tail_len);
+
+    var signed_header = header;
+    signed_header.additional_count += 1;
+    try signed_header.write(buffer[0..types.Header.wire_len]);
+    return .{ .bytes = buffer[0 .. unsigned_len + tail_len], .mac = mac };
 }
 
 /// Verify a structurally parsed TSIG on an incoming DNS message. This follows
@@ -738,6 +802,51 @@ test "TSIG signed BADTIME response carries client and server times" {
     try record_mod.validateSemantics(parsed, true);
     try verify(m, parsed, key, .{ .now = 1_700_000_000, .request_mac = request_mac.slice() });
     try std.testing.expectEqual(@as(u64, 1_700_001_000), try parsed.badTimeServerTime());
+}
+
+test "TSIG in-place signing matches exact reservation and verifies" {
+    var key_name_storage: [64]u8 = undefined;
+    const key = try Key.init("key.example", "shared secret bytes", &key_name_storage);
+    const options: SignOptions = .{ .time_signed = 1_700_000_123, .mac_len = 16 };
+    const reserved = try signedRecordWireSize(key, options, false);
+
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var b = try builder_mod.Builder.init(&packet, &compression, 0x4455, .{ .recursion_desired = true });
+    try b.addQuestion("example.com", .A, .IN);
+    const unsigned = try b.finish();
+    const unsigned_len = unsigned.len;
+    var signed = try signInPlace(&packet, unsigned_len, key, options);
+    defer signed.deinit();
+    try std.testing.expectEqual(unsigned_len + reserved, signed.bytes.len);
+
+    const m = try message.Message.init(signed.bytes);
+    try std.testing.expectEqual(@as(u16, 1), m.header.additional_count);
+    var additional = try m.records(.additional);
+    const parsed = try record_mod.parse((try additional.next()).?);
+    try std.testing.expect((try additional.next()) == null);
+    try verify(m, parsed, key, .{ .now = options.time_signed });
+    try std.testing.expectEqual(@as(usize, 16), parsed.mac.len);
+}
+
+test "TSIG in-place signing leaves finished message untouched on NoSpace" {
+    var key_name_storage: [64]u8 = undefined;
+    const key = try Key.init("key.example", "shared secret bytes", &key_name_storage);
+    const options: SignOptions = .{ .time_signed = 1_700_000_123 };
+    const reserved = try signedRecordWireSize(key, options, false);
+
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var b = try builder_mod.Builder.init(&packet, &compression, 0x4455, .{});
+    try b.addQuestion("example.com", .AAAA, .IN);
+    const unsigned = try b.finish();
+    const unsigned_len = unsigned.len;
+    var snapshot: [512]u8 = undefined;
+    @memcpy(snapshot[0..unsigned_len], unsigned);
+
+    try std.testing.expectError(error.NoSpace, signInPlace(packet[0 .. unsigned_len + reserved - 1], unsigned_len, key, options));
+    try std.testing.expectEqualSlices(u8, snapshot[0..unsigned_len], packet[0..unsigned_len]);
+    try std.testing.expectEqual(@as(u16, 0), (try types.Header.parse(packet[0..unsigned_len])).additional_count);
 }
 
 test "TSIG Key.init uses caller-owned name storage" {
