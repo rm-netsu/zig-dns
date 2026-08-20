@@ -11,7 +11,12 @@ pub const Error = error{
 /// validation and algorithm policy live outside this backend.
 pub const Backend = struct {
     context: ?*const anyopaque = null,
+    supports_fn: *const fn (?*const anyopaque, u8) bool = builtinSupports,
     verify_fn: *const fn (?*const anyopaque, u8, []const u8, []const u8, []const u8) Error!void = builtinVerify,
+
+    pub fn supports(self: Backend, algorithm: u8) bool {
+        return self.supports_fn(self.context, algorithm);
+    }
 
     pub fn verify(self: Backend, algorithm: u8, public_key: []const u8, message: []const u8, signature: []const u8) Error!void {
         return self.verify_fn(self.context, algorithm, public_key, message, signature);
@@ -19,6 +24,13 @@ pub const Backend = struct {
 
     pub const builtin: Backend = .{};
 };
+
+fn builtinSupports(_: ?*const anyopaque, algorithm: u8) bool {
+    return switch (algorithm) {
+        5, 7, 8, 10, 13, 14, 15 => true,
+        else => false,
+    };
+}
 
 fn builtinVerify(_: ?*const anyopaque, algorithm: u8, public_key: []const u8, message: []const u8, signature: []const u8) Error!void {
     switch (algorithm) {
@@ -100,6 +112,8 @@ test "builtin Ed25519 verification" {
     const sig = try key_pair.sign(msg, null);
     const pk = key_pair.public_key.toBytes();
     const sig_bytes = sig.toBytes();
+    try std.testing.expect(Backend.builtin.supports(15));
+    try std.testing.expect(!Backend.builtin.supports(16));
     try Backend.builtin.verify(15, &pk, msg, &sig_bytes);
 
     var corrupted = sig_bytes;

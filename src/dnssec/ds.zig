@@ -16,6 +16,13 @@ pub const Match = enum {
     digest_mismatch,
 };
 
+pub fn supportsDigest(digest_type: u8) bool {
+    return switch (digest_type) {
+        1, 2, 4 => true,
+        else => false,
+    };
+}
+
 pub fn digestLength(digest_type: u8) Error!usize {
     return switch (digest_type) {
         1 => std.crypto.hash.Sha1.digest_length,

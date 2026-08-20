@@ -8,6 +8,12 @@ pub const Rrset = rrset.Rrset;
 pub const policy = @import("dnssec/policy.zig");
 pub const crypto_backend = @import("dnssec/crypto_backend.zig");
 pub const verify = @import("dnssec/verify.zig");
+pub const trust = @import("dnssec/trust.zig");
+pub const SecurityStatus = trust.SecurityStatus;
+pub const ValidationState = trust.ValidationState;
+pub const TrustAnchor = trust.TrustAnchor;
+pub const DnskeySet = trust.DnskeySet;
+pub const Delegation = trust.Delegation;
 pub const denial = @import("dnssec/denial.zig");
 
 pub const records = @import("dnssec/records.zig");
