@@ -24,97 +24,97 @@
   "medians": {
     "HEAD": {
       "core.build_real_corpus": {
-        "mib_per_s": 332.4020391324142,
-        "ns_per_op": 723.4428472527472,
-        "ops_per_s": 1382286.2744383877,
-        "ops_per_s_mad_pct": 1.4275898252931245
+        "mib_per_s": 331.11839472681345,
+        "ns_per_op": 726.2437516483517,
+        "ops_per_s": 1376948.2685472302,
+        "ops_per_s_mad_pct": 1.1761821504911543
       },
       "core.materialize_real_names": {
-        "mib_per_s": 575.8872044796365,
-        "ns_per_op": 417.6124452991453,
-        "ops_per_s": 2394813.7636417663,
-        "ops_per_s_mad_pct": 2.3060006670207316
+        "mib_per_s": 570.8535258236802,
+        "ns_per_op": 421.2511324786325,
+        "ops_per_s": 2373881.3261205573,
+        "ops_per_s_mad_pct": 2.2036514644530873
       },
       "core.parse_real_corpus": {
-        "mib_per_s": 653.8084996453082,
-        "ns_per_op": 367.81836250000003,
-        "ops_per_s": 2718847.686764193,
-        "ops_per_s_mad_pct": 2.0542430073602325
+        "mib_per_s": 649.7016280233817,
+        "ns_per_op": 370.1279336538461,
+        "ops_per_s": 2701769.355088832,
+        "ops_per_s_mad_pct": 1.342922207346561
       },
       "core.validate_real_corpus": {
-        "mib_per_s": 241.0282454356541,
-        "ns_per_op": 997.6949038461538,
-        "ops_per_s": 1002310.4439649706,
-        "ops_per_s_mad_pct": 1.7018726326995919
+        "mib_per_s": 236.316460656257,
+        "ns_per_op": 1017.5906333333334,
+        "ops_per_s": 982716.5947645636,
+        "ops_per_s_mad_pct": 1.654760357346672
       }
     },
     "v0.7.0": {
       "core.build_real_corpus": {
-        "mib_per_s": 335.7532680448785,
-        "ns_per_op": 716.2184197802197,
-        "ops_per_s": 1396222.2831954071,
-        "ops_per_s_mad_pct": 1.1090894527139472
+        "mib_per_s": 324.27262487423263,
+        "ns_per_op": 741.5855835164834,
+        "ops_per_s": 1348480.2912451506,
+        "ops_per_s_mad_pct": 2.3069867177208705
       },
       "core.materialize_real_names": {
-        "mib_per_s": 575.4617803850962,
-        "ns_per_op": 417.8782376068376,
-        "ops_per_s": 2393044.647278241,
-        "ops_per_s_mad_pct": 1.4029641018525045
+        "mib_per_s": 574.0422405548118,
+        "ns_per_op": 418.9118717948718,
+        "ops_per_s": 2387141.5233727973,
+        "ops_per_s_mad_pct": 1.4827793142667731
       },
       "core.parse_real_corpus": {
-        "mib_per_s": 649.9603395746855,
-        "ns_per_op": 369.98057403846155,
-        "ops_per_s": 2702845.201155659,
-        "ops_per_s_mad_pct": 2.5074565082721305
+        "mib_per_s": 651.4302009566738,
+        "ns_per_op": 369.14574423076925,
+        "ops_per_s": 2708957.586082516,
+        "ops_per_s_mad_pct": 1.7513448788660666
       },
       "core.validate_real_corpus": {
-        "mib_per_s": 242.46764659393415,
-        "ns_per_op": 991.7736153846154,
-        "ops_per_s": 1008296.1607484607,
-        "ops_per_s_mad_pct": 0.7869962989513039
+        "mib_per_s": 236.73798806179806,
+        "ns_per_op": 1015.7755217948718,
+        "ops_per_s": 984469.5068360413,
+        "ops_per_s_mad_pct": 1.9653307644384963
       }
     }
   },
   "paired": {
     "core.build_real_corpus": {
       "HEAD": {
-        "vs_baseline_mad_pct": 1.8857031592175777,
-        "vs_baseline_median_pct": -0.6432835551444027,
-        "vs_previous_mad_pct": 1.8857031592175777,
-        "vs_previous_median_pct": -0.6432835551444027
+        "vs_baseline_mad_pct": 2.618069510587262,
+        "vs_baseline_median_pct": 1.876967336890012,
+        "vs_previous_mad_pct": 2.618069510587262,
+        "vs_previous_median_pct": 1.876967336890012
       },
       "v0.7.0": {}
     },
     "core.materialize_real_names": {
       "HEAD": {
-        "vs_baseline_mad_pct": 3.68554035566222,
-        "vs_baseline_median_pct": -0.13397461887020845,
-        "vs_previous_mad_pct": 3.68554035566222,
-        "vs_previous_median_pct": -0.13397461887020845
+        "vs_baseline_mad_pct": 2.2118548993450835,
+        "vs_baseline_median_pct": -1.095101069399057,
+        "vs_previous_mad_pct": 2.2118548993450835,
+        "vs_previous_median_pct": -1.095101069399057
       },
       "v0.7.0": {}
     },
     "core.parse_real_corpus": {
       "HEAD": {
-        "vs_baseline_mad_pct": 2.299639274748383,
-        "vs_baseline_median_pct": -0.310388438077841,
-        "vs_previous_mad_pct": 2.299639274748383,
-        "vs_previous_median_pct": -0.310388438077841
+        "vs_baseline_mad_pct": 2.256256789758265,
+        "vs_baseline_median_pct": -0.6149400400310479,
+        "vs_previous_mad_pct": 2.256256789758265,
+        "vs_previous_median_pct": -0.6149400400310479
       },
       "v0.7.0": {}
     },
     "core.validate_real_corpus": {
       "HEAD": {
-        "vs_baseline_mad_pct": 1.582590694824887,
-        "vs_baseline_median_pct": 0.3563189841204628,
-        "vs_previous_mad_pct": 1.582590694824887,
-        "vs_previous_median_pct": 0.3563189841204628
+        "vs_baseline_mad_pct": 2.4138662583663595,
+        "vs_baseline_median_pct": -0.3862244885789845,
+        "vs_previous_mad_pct": 2.4138662583663595,
+        "vs_previous_median_pct": -0.3862244885789845
       },
       "v0.7.0": {}
     }
   },
   "resolved_revisions": {
-    "HEAD": "38e2a6c164b753549e710be187786613101d78e3",
+    "HEAD": "dd418ab89a4585c7fa73612c67e5b339a89c0fa6",
     "v0.7.0": "63000a96d176aefd70691989f6dffd3bdc894b69"
   },
   "revisions": [
@@ -122,713 +122,1065 @@
     "HEAD"
   ],
   "round_offset": null,
-  "runs": 16,
+  "runs": 24,
   "samples": {
     "HEAD": [
       {
         "core.build_real_corpus": {
-          "mib_per_s": 319.328283406666,
-          "ns_per_op": 753.0577758241758,
-          "ops_per_s": 1327919.360377842
+          "mib_per_s": 329.47514805495575,
+          "ns_per_op": 729.8658131868132,
+          "ops_per_s": 1370114.8648594732
         },
         "core.materialize_real_names": {
-          "mib_per_s": 477.37735091829876,
-          "ns_per_op": 503.73702564102564,
-          "ops_per_s": 1985162.79149316
+          "mib_per_s": 554.0627804954489,
+          "ns_per_op": 434.0169658119658,
+          "ops_per_s": 2304057.3958420823
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 634.1424885321878,
-          "ns_per_op": 379.2091701923077,
-          "ops_per_s": 2637067.0295047765
+          "mib_per_s": 663.0367296508632,
+          "ns_per_op": 362.68374903846154,
+          "ops_per_s": 2757223.0701021925
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 238.66330545972576,
-          "ns_per_op": 1007.5811461538461,
-          "ops_per_s": 992475.8951844375
+          "mib_per_s": 214.06811057662182,
+          "ns_per_op": 1123.3464256410257,
+          "ops_per_s": 890197.3399963067
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 330.95702882958113,
-          "ns_per_op": 726.5977934065934,
-          "ops_per_s": 1376277.2321556099
+          "mib_per_s": 335.3377498633589,
+          "ns_per_op": 717.1058043956044,
+          "ops_per_s": 1394494.3603445329
         },
         "core.materialize_real_names": {
-          "mib_per_s": 569.9952548500181,
-          "ns_per_op": 421.8853487179487,
-          "ops_per_s": 2370312.225913656
+          "mib_per_s": 570.6001555077688,
+          "ns_per_op": 421.43810256410256,
+          "ops_per_s": 2372827.6914589033
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 647.9330050768859,
-          "ns_per_op": 371.1381346153846,
-          "ops_per_s": 2694414.577031577
+          "mib_per_s": 654.4474455661568,
+          "ns_per_op": 367.44378557692306,
+          "ops_per_s": 2721504.7287570834
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 235.88569290906568,
-          "ns_per_op": 1019.4456641025641,
-          "ops_per_s": 980925.2569437504
+          "mib_per_s": 237.93809368023355,
+          "ns_per_op": 1010.6521538461539,
+          "ops_per_s": 989460.118592123
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 312.67048933654297,
-          "ns_per_op": 769.0928791208792,
-          "ops_per_s": 1300233.076066264
+          "mib_per_s": 342.53373507561884,
+          "ns_per_op": 702.0407692307692,
+          "ops_per_s": 1424418.700206979
         },
         "core.materialize_real_names": {
-          "mib_per_s": 581.7607189582133,
-          "ns_per_op": 413.35318632478635,
-          "ops_per_s": 2419238.6392160635
+          "mib_per_s": 576.9102982551861,
+          "ns_per_op": 416.8284871794872,
+          "ops_per_s": 2399068.275699204
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 630.9349470837471,
-          "ns_per_op": 381.1369903846154,
-          "ops_per_s": 2623728.5417793575
+          "mib_per_s": 643.0397717112036,
+          "ns_per_op": 373.9623230769231,
+          "ops_per_s": 2674066.178036611
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 240.9924824749811,
-          "ns_per_op": 997.8429384615384,
-          "ops_per_s": 1002161.7245112616
+          "mib_per_s": 240.30863560000296,
+          "ns_per_op": 1000.6825025641026,
+          "ops_per_s": 999317.9629279479
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 327.5634670294341,
-          "ns_per_op": 734.125356043956,
-          "ops_per_s": 1362165.1830537298
+          "mib_per_s": 334.6881505018072,
+          "ns_per_op": 718.4976417582418,
+          "ops_per_s": 1391793.0162622265
         },
         "core.materialize_real_names": {
-          "mib_per_s": 583.6148258561524,
-          "ns_per_op": 412.03998974358973,
-          "ops_per_s": 2426948.90032954
+          "mib_per_s": 553.9211018782651,
+          "ns_per_op": 434.1279760683761,
+          "ops_per_s": 2303468.2285541026
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 658.0508180960304,
-          "ns_per_op": 365.43172692307695,
-          "ops_per_s": 2736489.270978103
+          "mib_per_s": 660.909837612311,
+          "ns_per_op": 363.85091153846156,
+          "ops_per_s": 2748378.4382227478
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 247.5418472832288,
-          "ns_per_op": 971.4424025641025,
-          "ops_per_s": 1029397.1082181715
+          "mib_per_s": 240.14522793016002,
+          "ns_per_op": 1001.3634205128205,
+          "ops_per_s": 998638.4358716416
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 329.1913718792888,
-          "ns_per_op": 730.4949868131869,
-          "ops_per_s": 1368934.7881257057
+          "mib_per_s": 340.19101784193833,
+          "ns_per_op": 706.875356043956,
+          "ops_per_s": 1414676.5641916315
         },
         "core.materialize_real_names": {
-          "mib_per_s": 588.6982900361604,
-          "ns_per_op": 408.4819863247863,
-          "ops_per_s": 2448088.369813435
+          "mib_per_s": 585.973374374453,
+          "ns_per_op": 410.3815247863248,
+          "ops_per_s": 2436756.870379763
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 671.6762175107989,
-          "ns_per_op": 358.01870096153846,
-          "ops_per_s": 2793150.182697939
+          "mib_per_s": 628.485473590166,
+          "ns_per_op": 382.6224423076923,
+          "ops_per_s": 2613542.462299776
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 242.94163906657292,
-          "ns_per_op": 989.8370974358975,
-          "ops_per_s": 1010267.2476010738
+          "mib_per_s": 242.54725615804253,
+          "ns_per_op": 991.4465769230769,
+          "ops_per_s": 1008627.2152993542
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 331.65004081155814,
-          "ns_per_op": 725.0795032967033,
-          "ops_per_s": 1379159.1066266824
+          "mib_per_s": 313.4286820674329,
+          "ns_per_op": 767.232421978022,
+          "ops_per_s": 1303386.0031903682
         },
         "core.materialize_real_names": {
-          "mib_per_s": 566.9497531582722,
-          "ns_per_op": 424.1516034188034,
-          "ops_per_s": 2357647.5768090147
+          "mib_per_s": 566.6904714268501,
+          "ns_per_op": 424.3456683760684,
+          "ops_per_s": 2356569.359661211
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 663.2556074079232,
-          "ns_per_op": 362.56406153846154,
-          "ops_per_s": 2758133.268247046
+          "mib_per_s": 651.092924854299,
+          "ns_per_op": 369.3369067307692,
+          "ops_per_s": 2707555.031127602
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 234.87406930037398,
-          "ns_per_op": 1023.8365076923077,
-          "ops_per_s": 976718.4433127567
+          "mib_per_s": 240.0921211634191,
+          "ns_per_op": 1001.5849153846153,
+          "ops_per_s": 998417.592597222
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 337.0541424088765,
-          "ns_per_op": 713.4540615384616,
-          "ops_per_s": 1401631.9394743415
+          "mib_per_s": 331.20990295804114,
+          "ns_per_op": 726.0430461538461,
+          "ops_per_s": 1377328.8034331
         },
         "core.materialize_real_names": {
-          "mib_per_s": 570.0136900010596,
-          "ns_per_op": 421.8717042735043,
-          "ops_per_s": 2370388.888067469
+          "mib_per_s": 521.5234771467619,
+          "ns_per_op": 461.096494017094,
+          "ops_per_s": 2168743.447359475
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 643.5664155063041,
-          "ns_per_op": 373.6563019230769,
-          "ops_per_s": 2676256.2142090295
+          "mib_per_s": 646.1951153026596,
+          "ns_per_op": 372.1362807692308,
+          "ops_per_s": 2687187.602168035
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 236.39652939190543,
-          "ns_per_op": 1017.2427128205128,
-          "ops_per_s": 983049.5587698005
+          "mib_per_s": 238.27771200290917,
+          "ns_per_op": 1009.2116666666667,
+          "ops_per_s": 990872.4136165687
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 289.83153195624107,
-          "ns_per_op": 829.6980153846154,
-          "ops_per_s": 1205257.7943511645
+          "mib_per_s": 339.55065692115664,
+          "ns_per_op": 708.2084571428571,
+          "ops_per_s": 1412013.6379538937
         },
         "core.materialize_real_names": {
-          "mib_per_s": 546.157809623633,
-          "ns_per_op": 440.29883418803416,
-          "ops_per_s": 2271184.7553358264
+          "mib_per_s": 577.2932614636188,
+          "ns_per_op": 416.55197264957263,
+          "ops_per_s": 2400660.8194393483
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 612.710588733961,
-          "ns_per_op": 392.4734634615385,
-          "ops_per_s": 2547942.9645515326
+          "mib_per_s": 658.9999139960913,
+          "ns_per_op": 364.9054298076923,
+          "ops_per_s": 2740436.0645633773
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 233.81884305929526,
-          "ns_per_op": 1028.4570897435897,
-          "ops_per_s": 972330.3091326013
+          "mib_per_s": 211.79008650572882,
+          "ns_per_op": 1135.4291923076923,
+          "ops_per_s": 880724.2290182442
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 333.15403745327023,
-          "ns_per_op": 721.8061912087912,
-          "ops_per_s": 1385413.4422500927
+          "mib_per_s": 328.80379370449145,
+          "ns_per_op": 731.3560593406594,
+          "ops_per_s": 1367323.0531535237
         },
         "core.materialize_real_names": {
-          "mib_per_s": 589.6360444762873,
-          "ns_per_op": 407.8323384615385,
-          "ops_per_s": 2451988.0001970646
+          "mib_per_s": 584.4691100951123,
+          "ns_per_op": 411.437735042735,
+          "ops_per_s": 2430501.421791398
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 630.7027478308477,
-          "ns_per_op": 381.27730961538464,
-          "ops_per_s": 2622762.946498849
+          "mib_per_s": 650.0625536331094,
+          "ns_per_op": 369.92231826923074,
+          "ops_per_s": 2703270.255978977
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 241.09199860432904,
-          "ns_per_op": 997.4310564102564,
-          "ops_per_s": 1002575.5600582452
+          "mib_per_s": 230.8529772528965,
+          "ns_per_op": 1041.6701128205127,
+          "ops_per_s": 959996.8240351224
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 328.6762748151675,
-          "ns_per_op": 731.6398087912088,
-          "ops_per_s": 1366792.7687698775
+          "mib_per_s": 329.4306312794597,
+          "ns_per_op": 729.9644417582417,
+          "ops_per_s": 1369929.7428671077
         },
         "core.materialize_real_names": {
-          "mib_per_s": 553.9554867694942,
-          "ns_per_op": 434.10102905982905,
-          "ops_per_s": 2303611.2173375594
+          "mib_per_s": 560.3244689748387,
+          "ns_per_op": 429.1667777777778,
+          "ops_per_s": 2330096.4841174153
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 624.111882275474,
-          "ns_per_op": 385.3037471153846,
-          "ops_per_s": 2595354.982884545
+          "mib_per_s": 623.243974426185,
+          "ns_per_op": 385.8403076923077,
+          "ops_per_s": 2591745.807950838
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 237.14683578766474,
-          "ns_per_op": 1014.0242692307693,
-          "ops_per_s": 986169.6907497017
+          "mib_per_s": 215.92763890253676,
+          "ns_per_op": 1113.6723769230769,
+          "ops_per_s": 897930.145993979
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 341.3785104241937,
-          "ns_per_op": 704.4164747252747,
-          "ops_per_s": 1419614.724925342
+          "mib_per_s": 331.0268864955857,
+          "ns_per_op": 726.4444571428571,
+          "ops_per_s": 1376567.7336613603
         },
         "core.materialize_real_names": {
-          "mib_per_s": 507.74074476472873,
-          "ns_per_op": 473.6130581196581,
-          "ops_per_s": 2111428.270095016
+          "mib_per_s": 566.9293200154955,
+          "ns_per_op": 424.1668905982906,
+          "ops_per_s": 2357562.606052284
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 649.566181194586,
-          "ns_per_op": 370.20499807692306,
-          "ops_per_s": 2701206.102550282
+          "mib_per_s": 653.2744487773438,
+          "ns_per_op": 368.1035548076923,
+          "ops_per_s": 2716626.848448742
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 245.35082327995553,
-          "ns_per_op": 980.1175461538462,
-          "ops_per_s": 1020285.7850307609
+          "mib_per_s": 236.73933134222142,
+          "ns_per_op": 1015.7697307692308,
+          "ops_per_s": 984475.0928369479
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 338.1741651048041,
-          "ns_per_op": 711.091123076923,
-          "ops_per_s": 1406289.5282294557
+          "mib_per_s": 334.35643322127646,
+          "ns_per_op": 719.2104681318681,
+          "ops_per_s": 1390413.5775407662
         },
         "core.materialize_real_names": {
-          "mib_per_s": 588.4499197164415,
-          "ns_per_op": 408.6543965811966,
-          "ops_per_s": 2447055.5275215483
+          "mib_per_s": 571.1068961395916,
+          "ns_per_op": 421.0641623931624,
+          "ops_per_s": 2374934.9607822117
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 668.1327472555294,
-          "ns_per_op": 359.91746826923077,
-          "ops_per_s": 2778414.7427153084
+          "mib_per_s": 640.535673142018,
+          "ns_per_op": 375.42428461538464,
+          "ops_per_s": 2663652.9414299396
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 245.38085668277765,
-          "ns_per_op": 979.9975846153847,
-          "ops_per_s": 1020410.6782492384
+          "mib_per_s": 233.9413568872677,
+          "ns_per_op": 1027.9184923076923,
+          "ops_per_s": 972839.780083132
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 335.2304715970515,
-          "ns_per_op": 717.3352879120879,
-          "ops_per_s": 1394048.2461285994
+          "mib_per_s": 332.5410745504415,
+          "ns_per_op": 723.1366747252747,
+          "ops_per_s": 1382864.450043151
         },
         "core.materialize_real_names": {
-          "mib_per_s": 519.5502945128562,
-          "ns_per_op": 462.8476769230769,
-          "ops_per_s": 2160538.012522412
+          "mib_per_s": 471.5572087634483,
+          "ns_per_op": 509.9543435897436,
+          "ops_per_s": 1960959.8635059306
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 663.9483846835951,
-          "ns_per_op": 362.1857548076923,
-          "ops_per_s": 2761014.1666973187
+          "mib_per_s": 621.7277170110665,
+          "ns_per_op": 386.7812875,
+          "ops_per_s": 2585440.4861817416
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 241.0640083963271,
-          "ns_per_op": 997.5468692307692,
-          "ops_per_s": 1002459.1634186797
+          "mib_per_s": 231.44467492982224,
+          "ns_per_op": 1039.007041025641,
+          "ops_per_s": 962457.3852866909
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 334.8810431484348,
-          "ns_per_op": 718.0837846153846,
-          "ops_per_s": 1392595.1559198813
+          "mib_per_s": 329.48478687236496,
+          "ns_per_op": 729.8444615384616,
+          "ops_per_s": 1370154.9476611349
         },
         "core.materialize_real_names": {
-          "mib_per_s": 584.3897787296671,
-          "ns_per_op": 411.493588034188,
-          "ops_per_s": 2430171.5241232803
+          "mib_per_s": 584.0788911307848,
+          "ns_per_op": 411.7126136752137,
+          "ops_per_s": 2428878.705156375
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 666.3458828060684,
-          "ns_per_op": 360.88261826923076,
-          "ops_per_s": 2770984.107785335
+          "mib_per_s": 649.340702413654,
+          "ns_per_op": 370.3335490384615,
+          "ops_per_s": 2700268.4541986864
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 232.66424912453235,
-          "ns_per_op": 1033.5607974358975,
-          "ops_per_s": 967528.9566717735
+          "mib_per_s": 237.51391470909346,
+          "ns_per_op": 1012.4570897435898,
+          "ops_per_s": 987696.1800457691
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 340.19504249458555,
-          "ns_per_op": 706.8669934065935,
-          "ops_per_s": 1414693.3006175817
+          "mib_per_s": 315.92229629497393,
+          "ns_per_op": 761.1765604395605,
+          "ops_per_s": 1313755.640902191
         },
         "core.materialize_real_names": {
-          "mib_per_s": 596.9649855878292,
-          "ns_per_op": 402.8253794871795,
-          "ops_per_s": 2482465.23412467
+          "mib_per_s": 496.1346170054046,
+          "ns_per_op": 484.6923367521367,
+          "ops_per_s": 2063164.4533538038
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 660.4998443279883,
-          "ns_per_op": 364.0767653846154,
-          "ops_per_s": 2746673.4905304573
+          "mib_per_s": 613.2742126204129,
+          "ns_per_op": 392.1127644230769,
+          "ops_per_s": 2550286.7815877385
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 244.4813116419449,
-          "ns_per_op": 983.6033897435898,
-          "ops_per_s": 1016669.9407783503
+          "mib_per_s": 225.47488375564984,
+          "ns_per_op": 1066.516335897436,
+          "ops_per_s": 937632.1452765515
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 338.4903376835321,
-          "ns_per_op": 710.4269164835165,
-          "ops_per_s": 1407604.3246641292
+          "mib_per_s": 322.8804487720819,
+          "ns_per_op": 744.7730197802198,
+          "ops_per_s": 1342690.958777074
         },
         "core.materialize_real_names": {
-          "mib_per_s": 595.1330938559036,
-          "ns_per_op": 404.06532478632477,
-          "ops_per_s": 2474847.354270782
+          "mib_per_s": 486.84477551519694,
+          "ns_per_op": 493.941105982906,
+          "ops_per_s": 2024532.8600665347
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 670.7128494988228,
-          "ns_per_op": 358.5329355769231,
-          "ops_per_s": 2789144.038861809
+          "mib_per_s": 653.4222740176584,
+          "ns_per_op": 368.0202778846154,
+          "ops_per_s": 2717241.576328378
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.03059811970388,
-          "ns_per_op": 989.4747769230769,
-          "ops_per_s": 1010637.1817881531
+          "mib_per_s": 239.45837241792952,
+          "ns_per_op": 1004.2357025641026,
+          "ops_per_s": 995782.162939151
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 329.96666272687924,
+          "ns_per_op": 728.7786131868132,
+          "ops_per_s": 1372158.817376907
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 583.3889957285969,
+          "ns_per_op": 412.1994905982906,
+          "ops_per_s": 2426009.790911049
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 641.4176080163089,
+          "ns_per_op": 374.9080846153846,
+          "ops_per_s": 2667320.4474261804
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 235.05327600668633,
+          "ns_per_op": 1023.0559256410256,
+          "ops_per_s": 977463.670300742
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 338.6145624667335,
+          "ns_per_op": 710.1662879120879,
+          "ops_per_s": 1408120.9105828337
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 579.0870148721584,
+          "ns_per_op": 415.2616803418803,
+          "ops_per_s": 2408120.101948032
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 661.9620163274753,
+          "ns_per_op": 363.27257596153845,
+          "ops_per_s": 2752753.899336115
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 227.87446895076457,
+          "ns_per_op": 1055.2856051282051,
+          "ops_per_s": 947610.7654083952
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 318.21858570319995,
+          "ns_per_op": 755.6838527472528,
+          "ops_per_s": 1323304.7078676454
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 581.5836306785458,
+          "ns_per_op": 413.47904957264956,
+          "ops_per_s": 2418502.221656812
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 643.9899098343117,
+          "ns_per_op": 373.41058173076925,
+          "ops_per_s": 2678017.3056825814
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 235.88954584944221,
+          "ns_per_op": 1019.4290128205129,
+          "ops_per_s": 980941.2793081517
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 337.8968996770878,
+          "ns_per_op": 711.6746175824176,
+          "ops_per_s": 1405136.5262920763
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 564.3782780955244,
+          "ns_per_op": 426.0841641025641,
+          "ops_per_s": 2346954.156595425
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 666.231182197782,
+          "ns_per_op": 360.94474903846157,
+          "ops_per_s": 2770507.1279301033
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 235.8935899702926,
+          "ns_per_op": 1019.4115358974359,
+          "ops_per_s": 980958.0966921793
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 333.39601063888205,
+          "ns_per_op": 721.2823164835165,
+          "ops_per_s": 1386419.6822061602
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 583.4773000821548,
+          "ns_per_op": 412.13710769230767,
+          "ops_per_s": 2426377.0025449335
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 660.1984830485767,
+          "ns_per_op": 364.2429557692308,
+          "ops_per_s": 2745420.286545112
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 243.04135278713204,
+          "ns_per_op": 989.4309923076923,
+          "ops_per_s": 1010681.9048265883
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 320.44510859664246,
+          "ns_per_op": 750.4331956043956,
+          "ops_per_s": 1332563.6523776168
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 592.1478076656466,
+          "ns_per_op": 406.1024017094017,
+          "ops_per_s": 2462433.1099513634
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 651.88760205028,
+          "ns_per_op": 368.8866701923077,
+          "ops_per_s": 2710859.6780650294
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 246.1142280184626,
+          "ns_per_op": 977.0773871794872,
+          "ops_per_s": 1023460.3861692912
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 320.87077978751245,
+          "ns_per_op": 749.4376615384615,
+          "ops_per_s": 1334333.796285576
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 551.7603289466339,
+          "ns_per_op": 435.82808376068374,
+          "ops_per_s": 2294482.7037559766
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 611.5097791843436,
+          "ns_per_op": 393.24415576923076,
+          "ops_per_s": 2542949.4255137374
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 234.9048831343095,
+          "ns_per_op": 1023.7022051282052,
+          "ops_per_s": 976846.581936163
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 333.69315181718565,
+          "ns_per_op": 720.6400417582418,
+          "ops_per_s": 1387655.3369976035
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 582.0720379207853,
+          "ns_per_op": 413.13210598290595,
+          "ops_per_s": 2420533.2519990024
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 644.7572424503744,
+          "ns_per_op": 372.9661817307692,
+          "ops_per_s": 2681208.2408100576
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 242.24067333419194,
+          "ns_per_op": 992.7013641025641,
+          "ops_per_s": 1007352.2976409266
         }
       }
     ],
     "v0.7.0": [
       {
         "core.build_real_corpus": {
-          "mib_per_s": 333.6148789292617,
-          "ns_per_op": 720.8091186813186,
-          "ops_per_s": 1387329.8409840402
+          "mib_per_s": 334.3833777718503,
+          "ns_per_op": 719.1525142857142,
+          "ops_per_s": 1390525.6258378413
         },
         "core.materialize_real_names": {
-          "mib_per_s": 571.706840962397,
-          "ns_per_op": 420.6223008547009,
-          "ops_per_s": 2377429.817601227
+          "mib_per_s": 566.5255793575442,
+          "ns_per_op": 424.46917777777776,
+          "ops_per_s": 2355883.659763701
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 650.2645464441399,
-          "ns_per_op": 369.80740865384615,
-          "ops_per_s": 2704110.2384620914
+          "mib_per_s": 648.7673669959341,
+          "ns_per_op": 370.66082403846156,
+          "ops_per_s": 2697884.2519819015
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 229.15651896391054,
-          "ns_per_op": 1049.3816538461538,
-          "ops_per_s": 952942.1410550089
+          "mib_per_s": 242.5944563519002,
+          "ns_per_op": 991.2536769230769,
+          "ops_per_s": 1008823.49622558
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 318.1542842115577,
-          "ns_per_op": 755.8365824175825,
-          "ops_per_s": 1323037.3115858566
+          "mib_per_s": 336.5732106685877,
+          "ns_per_op": 714.4735208791209,
+          "ops_per_s": 1399631.9958359748
         },
         "core.materialize_real_names": {
-          "mib_per_s": 584.218403871381,
-          "ns_per_op": 411.61429572649575,
-          "ops_per_s": 2429458.865696121
+          "mib_per_s": 581.6200160071284,
+          "ns_per_op": 413.4531829059829,
+          "ops_per_s": 2418653.5292132334
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 621.4252543711668,
-          "ns_per_op": 386.96954326923077,
-          "ops_per_s": 2584182.702214005
+          "mib_per_s": 662.1320151414268,
+          "ns_per_op": 363.1793076923077,
+          "ops_per_s": 2753460.8355143922
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 239.36648034341093,
-          "ns_per_op": 1004.6212256410256,
-          "ops_per_s": 995400.0318497382
+          "mib_per_s": 230.40615583050982,
+          "ns_per_op": 1043.6902,
+          "ops_per_s": 958138.7273733144
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 324.29552111366877,
-          "ns_per_op": 741.5231824175825,
-          "ops_per_s": 1348575.5047329844
+          "mib_per_s": 333.1038682839644,
+          "ns_per_op": 721.9149032967033,
+          "ops_per_s": 1385204.8149073953
         },
         "core.materialize_real_names": {
-          "mib_per_s": 557.3569917842034,
-          "ns_per_op": 431.4517452991453,
-          "ops_per_s": 2317756.298115457
+          "mib_per_s": 583.6946371765436,
+          "ns_per_op": 411.9836495726496,
+          "ops_per_s": 2427280.793879319
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 660.3619991074831,
-          "ns_per_op": 364.1527634615385,
-          "ops_per_s": 2746100.2643348584
+          "mib_per_s": 663.5491769187084,
+          "ns_per_op": 362.4036548076923,
+          "ops_per_s": 2759354.070340833
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 233.86666144773594,
-          "ns_per_op": 1028.2468025641026,
-          "ops_per_s": 972529.1608068564
+          "mib_per_s": 237.12862913877674,
+          "ns_per_op": 1014.1021256410256,
+          "ops_per_s": 986093.9788168657
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 335.86827622423544,
-          "ns_per_op": 715.9730879120879,
-          "ops_per_s": 1396700.5420778985
+          "mib_per_s": 338.3846174338083,
+          "ns_per_op": 710.6488725274726,
+          "ops_per_s": 1407164.6894245113
         },
         "core.materialize_real_names": {
-          "mib_per_s": 584.8089946372909,
-          "ns_per_op": 411.19861196581195,
-          "ops_per_s": 2431914.8238835554
+          "mib_per_s": 578.3343624557214,
+          "ns_per_op": 415.8021076923077,
+          "ops_per_s": 2404990.214094819
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 633.7069878059281,
-          "ns_per_op": 379.4697730769231,
-          "ops_per_s": 2635256.009698796
+          "mib_per_s": 651.6941740999597,
+          "ns_per_op": 368.9961586538462,
+          "ops_per_s": 2710055.312359216
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.37762023237988,
-          "ns_per_op": 988.0639256410257,
-          "ops_per_s": 1012080.265303918
+          "mib_per_s": 245.27191063599557,
+          "ns_per_op": 980.4328846153846,
+          "ops_per_s": 1019957.6286063594
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 339.6580677023672,
-          "ns_per_op": 707.9844989010988,
-          "ops_per_s": 1412460.3032300202
+          "mib_per_s": 340.69515889993477,
+          "ns_per_op": 705.8293626373627,
+          "ops_per_s": 1416773.0232466608
         },
         "core.materialize_real_names": {
-          "mib_per_s": 589.0738313808803,
-          "ns_per_op": 408.22157435897435,
-          "ops_per_s": 2449650.0499031404
+          "mib_per_s": 578.8336037000367,
+          "ns_per_op": 415.44348034188033,
+          "ops_per_s": 2407066.297386762
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 631.3369962492368,
-          "ns_per_op": 380.89427403846156,
-          "ops_per_s": 2625400.4540352398
+          "mib_per_s": 656.9958274689571,
+          "ns_per_op": 366.0185298076923,
+          "ops_per_s": 2732102.116593398
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 242.76743718398802,
-          "ns_per_op": 990.5473717948718,
-          "ops_per_s": 1009542.8330580496
+          "mib_per_s": 241.69523742925674,
+          "ns_per_op": 994.9416025641026,
+          "ops_per_s": 1005084.1149097206
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 336.2708285315991,
-          "ns_per_op": 715.1159912087912,
-          "ops_per_s": 1398374.5466377519
+          "mib_per_s": 317.08451816993096,
+          "ns_per_op": 758.3865912087912,
+          "ops_per_s": 1318588.71397779
         },
         "core.materialize_real_names": {
-          "mib_per_s": 591.8047515889086,
-          "ns_per_op": 406.33781025641025,
-          "ops_per_s": 2461006.519105305
+          "mib_per_s": 561.0794960115817,
+          "ns_per_op": 428.5892615384615,
+          "ops_per_s": 2333236.2467748392
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 666.3019334776342,
-          "ns_per_op": 360.9064221153846,
-          "ops_per_s": 2770801.345508593
+          "mib_per_s": 619.5107710895729,
+          "ns_per_op": 388.16540096153847,
+          "ops_per_s": 2576221.3672905006
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 245.89975211862262,
-          "ns_per_op": 977.9296025641025,
-          "ops_per_s": 1022568.4930469735
+          "mib_per_s": 235.08783168119473,
+          "ns_per_op": 1022.9055461538461,
+          "ops_per_s": 977607.3692825582
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 303.8265032410011,
-          "ns_per_op": 791.4801516483517,
-          "ops_per_s": 1263455.5622366283
+          "mib_per_s": 316.29306390162037,
+          "ns_per_op": 760.284287912088,
+          "ops_per_s": 1315297.4695113397
         },
         "core.materialize_real_names": {
-          "mib_per_s": 550.6657939970929,
-          "ns_per_op": 436.6943606837607,
-          "ops_per_s": 2289931.105211057
+          "mib_per_s": 540.5025779886232,
+          "ns_per_op": 444.90564273504276,
+          "ops_per_s": 2247667.6039722334
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 671.0025018167852,
-          "ns_per_op": 358.3781673076923,
-          "ops_per_s": 2790348.551398867
+          "mib_per_s": 666.3575741332254,
+          "ns_per_op": 360.87628653846156,
+          "ops_per_s": 2771032.7259018216
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 240.54689875332576,
-          "ns_per_op": 999.6913205128205,
-          "ops_per_s": 1000308.7747996263
+          "mib_per_s": 233.89042340169297,
+          "ns_per_op": 1028.1423384615384,
+          "ops_per_s": 972627.9743487178
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 332.7756711159163,
-          "ns_per_op": 722.6268857142857,
-          "ops_per_s": 1383840.0144931541
+          "mib_per_s": 319.23524211217074,
+          "ns_per_op": 753.2772549450549,
+          "ops_per_s": 1327532.4502834503
         },
         "core.materialize_real_names": {
-          "mib_per_s": 568.0713594740126,
-          "ns_per_op": 423.31415384615383,
-          "ops_per_s": 2362311.751010888
+          "mib_per_s": 521.5636393034944,
+          "ns_per_op": 461.06098803418803,
+          "ops_per_s": 2168910.4607693446
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 617.2879705547864,
-          "ns_per_op": 389.56315096153844,
-          "ops_per_s": 2566977.902123833
+          "mib_per_s": 656.1870847329917,
+          "ns_per_op": 366.46964326923074,
+          "ops_per_s": 2728738.9784297617
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 226.53974011408508,
-          "ns_per_op": 1061.503146153846,
-          "ops_per_s": 942060.3260793987
+          "mib_per_s": 237.13318053890762,
+          "ns_per_op": 1014.0826615384616,
+          "ops_per_s": 986112.9057101748
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 328.88261673581184,
-          "ns_per_op": 731.1807758241758,
-          "ops_per_s": 1367650.836925814
+          "mib_per_s": 331.0787641338293,
+          "ns_per_op": 726.3306285714285,
+          "ops_per_s": 1376783.4656330459
         },
         "core.materialize_real_names": {
-          "mib_per_s": 570.6583853199008,
-          "ns_per_op": 421.3950991452991,
-          "ops_per_s": 2373069.838800368
+          "mib_per_s": 589.2168908339345,
+          "ns_per_op": 408.12245982905984,
+          "ops_per_s": 2450244.9593654936
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 618.3258365473971,
-          "ns_per_op": 388.90926538461537,
-          "ops_per_s": 2571293.844107933
+          "mib_per_s": 663.5459656996039,
+          "ns_per_op": 362.40540865384617,
+          "ops_per_s": 2759340.716559659
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 239.49438843017248,
-          "ns_per_op": 1004.084682051282,
-          "ops_per_s": 995931.934702024
+          "mib_per_s": 243.51044971028406,
+          "ns_per_op": 987.5249589743589,
+          "ops_per_s": 1012632.63364867
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 318.55462549613895,
-          "ns_per_op": 754.8866901098901,
-          "ops_per_s": 1324702.1216580574
+          "mib_per_s": 338.59401476397613,
+          "ns_per_op": 710.2093846153846,
+          "ops_per_s": 1408035.4634310445
         },
         "core.materialize_real_names": {
-          "mib_per_s": 574.8107915587021,
-          "ns_per_op": 418.35096068376066,
-          "ops_per_s": 2390337.525138179
+          "mib_per_s": 575.1158785874566,
+          "ns_per_op": 418.1290341880342,
+          "ops_per_s": 2391606.222566922
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 640.7561477546448,
-          "ns_per_op": 375.29510673076925,
-          "ops_per_s": 2664569.7800621316
+          "mib_per_s": 643.7950805397087,
+          "ns_per_op": 373.5235855769231,
+          "ops_per_s": 2677207.112518631
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.86756728342158,
-          "ns_per_op": 986.0788358974359,
-          "ops_per_s": 1014117.6989057821
+          "mib_per_s": 225.95273576572407,
+          "ns_per_op": 1064.2608333333333,
+          "ops_per_s": 939619.2819272844
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 337.581641544995,
-          "ns_per_op": 712.3392307692308,
-          "ops_per_s": 1403825.532562813
+          "mib_per_s": 316.62367462836437,
+          "ns_per_op": 759.4904175824175,
+          "ops_per_s": 1316672.3066541955
         },
         "core.materialize_real_names": {
-          "mib_per_s": 593.864571162522,
-          "ns_per_op": 404.92842735042734,
-          "ops_per_s": 2469572.231673906
+          "mib_per_s": 581.3330221673193,
+          "ns_per_op": 413.6572974358974,
+          "ops_per_s": 2417460.07189675
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 665.0888964665237,
-          "ns_per_op": 361.56466923076925,
-          "ops_per_s": 2765756.9588519405
+          "mib_per_s": 648.594347262335,
+          "ns_per_op": 370.75970192307693,
+          "ops_per_s": 2697164.753378387
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 244.47954690139898,
-          "ns_per_op": 983.6104897435897,
-          "ops_per_s": 1016662.602145167
+          "mib_per_s": 241.95949415565204,
+          "ns_per_op": 993.8549743589743,
+          "ops_per_s": 1006183.0204602932
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 340.5062569803758,
-          "ns_per_op": 706.2209340659341,
-          "ops_per_s": 1415987.4789362138
+          "mib_per_s": 325.46599483890003,
+          "ns_per_op": 738.8564417582418,
+          "ops_per_s": 1353442.8929391482
         },
         "core.materialize_real_names": {
-          "mib_per_s": 582.7688051383507,
-          "ns_per_op": 412.638158974359,
-          "ops_per_s": 2423430.74253135
+          "mib_per_s": 574.8384418314885,
+          "ns_per_op": 418.33083760683763,
+          "ops_per_s": 2390452.508164928
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 669.2274550189436,
-          "ns_per_op": 359.3287230769231,
-          "ops_per_s": 2782967.0599027667
+          "mib_per_s": 624.4655835027464,
+          "ns_per_op": 385.08550865384615,
+          "ops_per_s": 2596825.841345542
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.43138746942782,
-          "ns_per_op": 987.8456897435898,
-          "ops_per_s": 1012303.855128998
+          "mib_per_s": 232.10676385108212,
+          "ns_per_op": 1036.043253846154,
+          "ops_per_s": 965210.6669172848
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 338.848183457791,
-          "ns_per_op": 709.6766593406593,
-          "ops_per_s": 1409092.4181289433
+          "mib_per_s": 326.57175962862266,
+          "ns_per_op": 736.3546901098902,
+          "ops_per_s": 1358041.1905175273
         },
         "core.materialize_real_names": {
-          "mib_per_s": 577.6566085451523,
-          "ns_per_op": 416.2899606837607,
-          "ops_per_s": 2402171.7899645944
+          "mib_per_s": 570.2082648479432,
+          "ns_per_op": 421.727747008547,
+          "ops_per_s": 2371198.0231164
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 649.656132705231,
-          "ns_per_op": 370.1537394230769,
-          "ops_per_s": 2701580.163849226
+          "mib_per_s": 612.6196441366905,
+          "ns_per_op": 392.5317269230769,
+          "ops_per_s": 2547564.773524578
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 240.57197162484536,
-          "ns_per_op": 999.5871307692307,
-          "ops_per_s": 1000413.0397621781
+          "mib_per_s": 226.93225168659126,
+          "ns_per_op": 1059.6671256410257,
+          "ops_per_s": 943692.5764730776
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 335.63825986552155,
-          "ns_per_op": 716.4637516483516,
-          "ops_per_s": 1395744.024312916
+          "mib_per_s": 317.822081951514,
+          "ns_per_op": 756.6266175824176,
+          "ops_per_s": 1321655.8560881878
         },
         "core.materialize_real_names": {
-          "mib_per_s": 576.1127692114902,
-          "ns_per_op": 417.4055145299145,
-          "ops_per_s": 2395751.7694183034
+          "mib_per_s": 545.1103378102232,
+          "ns_per_op": 441.14490256410255,
+          "ops_per_s": 2266828.867765712
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 660.164205500202,
-          "ns_per_op": 364.2618682692308,
-          "ops_per_s": 2745277.7441444593
+          "mib_per_s": 546.9194484445643,
+          "ns_per_op": 439.685675,
+          "ops_per_s": 2274352.0129465214
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.1789076042821,
-          "ns_per_op": 988.871317948718,
-          "ops_per_s": 1011253.9233864797
+          "mib_per_s": 227.65406962150286,
+          "ns_per_op": 1056.3072615384615,
+          "ops_per_s": 946694.2398403542
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 339.296076553446,
-          "ns_per_op": 708.7398395604396,
-          "ops_per_s": 1410954.9713195183
+          "mib_per_s": 322.1167175039764,
+          "ns_per_op": 746.5388593406593,
+          "ops_per_s": 1339514.99977268
         },
         "core.materialize_real_names": {
-          "mib_per_s": 573.9275490599138,
-          "ns_per_op": 418.99477948717947,
-          "ops_per_s": 2386664.581415383
+          "mib_per_s": 538.3955110271218,
+          "ns_per_op": 446.6468273504274,
+          "ops_per_s": 2238905.4142221105
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 671.2935053667205,
-          "ns_per_op": 358.22281153846154,
-          "ops_per_s": 2791558.6830031686
+          "mib_per_s": 616.6421309133373,
+          "ns_per_op": 389.97115961538464,
+          "ops_per_s": 2564292.192751552
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 243.44246200245368,
-          "ns_per_op": 987.8007512820512,
-          "ops_per_s": 1012349.908321203
+          "mib_per_s": 232.0638432515315,
+          "ns_per_op": 1036.2348717948719,
+          "ops_per_s": 965032.1825860685
         }
       },
       {
         "core.build_real_corpus": {
-          "mib_per_s": 340.53928604721887,
-          "ns_per_op": 706.1524373626373,
-          "ops_per_s": 1416124.829554982
+          "mib_per_s": 327.2735937008138,
+          "ns_per_op": 734.7755868131868,
+          "ops_per_s": 1360959.7514489077
         },
         "core.materialize_real_names": {
-          "mib_per_s": 557.2165723608645,
-          "ns_per_op": 431.5604717948718,
-          "ops_per_s": 2317172.3671562704
+          "mib_per_s": 543.0236329052733,
+          "ns_per_op": 442.84011282051284,
+          "ops_per_s": 2258151.3531618784
         },
         "core.parse_real_corpus": {
-          "mib_per_s": 647.7012155526758,
-          "ns_per_op": 371.27095192307695,
-          "ops_per_s": 2693450.685598448
+          "mib_per_s": 659.7211120753245,
+          "ns_per_op": 364.5065201923077,
+          "ops_per_s": 2743435.150274997
         },
         "core.validate_real_corpus": {
-          "mib_per_s": 242.16785600388025,
-          "ns_per_op": 992.999858974359,
-          "ops_per_s": 1007049.4884388718
+          "mib_per_s": 227.0918164923952,
+          "ns_per_op": 1058.9225564102564,
+          "ops_per_s": 944356.1230672018
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 319.54876133755846,
+          "ns_per_op": 752.5381912087912,
+          "ops_per_s": 1328836.2128089664
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 571.9851532129559,
+          "ns_per_op": 420.4176376068376,
+          "ops_per_s": 2378587.1727274465
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 658.2236730598837,
+          "ns_per_op": 365.33576153846155,
+          "ops_per_s": 2737208.084390399
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 236.59851244432176,
+          "ns_per_op": 1016.3742974358975,
+          "ops_per_s": 983889.500671941
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 316.9597223499942,
+          "ns_per_op": 758.685189010989,
+          "ops_per_s": 1318069.753415887
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 564.5964568109279,
+          "ns_per_op": 425.9195111111111,
+          "ops_per_s": 2347861.4477915443
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 619.9842967234479,
+          "ns_per_op": 387.86893173076925,
+          "ops_per_s": 2578190.512804795
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 236.69908982801513,
+          "ns_per_op": 1015.9424230769231,
+          "ops_per_s": 984307.749420839
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 336.59625575663546,
+          "ns_per_op": 714.4246043956044,
+          "ops_per_s": 1399727.8283073541
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 591.0445141798227,
+          "ns_per_op": 406.86046666666664,
+          "ops_per_s": 2457845.0892337044
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 637.6833071153391,
+          "ns_per_op": 377.1035625,
+          "ops_per_s": 2651791.4425695725
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 241.0818229188221,
+          "ns_per_op": 997.4731564102564,
+          "ops_per_s": 1002533.2447028824
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 337.20407605295094,
+          "ns_per_op": 713.136832967033,
+          "ops_per_s": 1402255.4351027724
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 580.3248439395994,
+          "ns_per_op": 414.37592991452993,
+          "ops_per_s": 2413267.5858036983
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 651.1662278133879,
+          "ns_per_op": 369.2953298076923,
+          "ops_per_s": 2707859.8598058154
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 236.776886295581,
+          "ns_per_op": 1015.6086205128205,
+          "ops_per_s": 984631.2642512437
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 323.0792549095652,
+          "ns_per_op": 744.3147252747252,
+          "ops_per_s": 1343517.689551153
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 589.5371079078274,
+          "ns_per_op": 407.9007811965812,
+          "ops_per_s": 2451576.574740773
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 664.7433963802519,
+          "ns_per_op": 361.7525923076923,
+          "ops_per_s": 2764320.2046481534
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 237.36994054496978,
+          "ns_per_op": 1013.0711846153846,
+          "ops_per_s": 987097.4667783616
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 314.3897657916482,
+          "ns_per_op": 764.8870065934066,
+          "ops_per_s": 1307382.6478681094
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 577.6484750106612,
+          "ns_per_op": 416.2958222222222,
+          "ops_per_s": 2402137.966847507
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 661.0212070493571,
+          "ns_per_op": 363.7896096153846,
+          "ops_per_s": 2748841.5654785926
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 235.68500097360857,
+          "ns_per_op": 1020.3137487179487,
+          "ops_per_s": 980090.6841219444
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 308.6745776973729,
+          "ns_per_op": 779.0490835164835,
+          "ops_per_s": 1283616.1689404536
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 554.415562711953,
+          "ns_per_op": 433.7407948717949,
+          "ops_per_s": 2305524.432617827
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 642.7086862118513,
+          "ns_per_op": 374.15496634615386,
+          "ops_per_s": 2672689.366562726
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 237.56560588135474,
+          "ns_per_op": 1012.2367923076923,
+          "ops_per_s": 987911.1366029336
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 318.0575034637236,
+          "ns_per_op": 756.0665736263736,
+          "ops_per_s": 1322634.8510603132
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 573.2460392781351,
+          "ns_per_op": 419.492905982906,
+          "ops_per_s": 2383830.538580667
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 666.3124036713444,
+          "ns_per_op": 360.90075096153845,
+          "ops_per_s": 2770844.8855695813
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 243.21205965772407,
+          "ns_per_op": 988.7365256410257,
+          "ops_per_s": 1011391.7854422056
         }
       }
     ]
