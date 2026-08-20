@@ -22,6 +22,16 @@ pub const Handle = struct {
     generation: u32,
 };
 
+/// Transport intent only. The resolver never owns the corresponding socket,
+/// TLS session, QUIC connection/stream, or HTTP request.
+pub const Transport = enum {
+    udp,
+    tcp,
+    dot,
+    doq,
+    doh,
+};
+
 pub const BeginOptions = struct {
     query: core.QueryOptions = .{ .udp_payload_size = 1232 },
     /// Set when an application-specific EDNS option is mandatory even if DO
@@ -29,7 +39,7 @@ pub const BeginOptions = struct {
     edns_required: bool = false,
     /// Number of caller-owned upstream server choices available to this query.
     server_count: usize = 1,
-    transport: retry_mod.Transport = .udp,
+    transport: Transport = .udp,
 };
 
 pub const DispatchReason = enum {
@@ -45,7 +55,7 @@ pub const Dispatch = struct {
     handle: Handle,
     id: u16,
     server_index: usize,
-    transport: retry_mod.Transport,
+    transport: Transport,
     edns_enabled: bool,
     reason: DispatchReason,
 };
@@ -90,8 +100,14 @@ pub const Action = union(enum) {
     send: Dispatch,
     /// Re-send on the same server/transport (timeout or EDNS fallback).
     retry: Dispatch,
-    /// UDP truncation requires a TCP-capable path for the same logical query.
+    /// TCP path needed for an initial TCP query or UDP truncation fallback.
     connect_tcp: Dispatch,
+    /// DNS-over-TLS path. TLS/session ownership remains caller-side.
+    connect_dot: Dispatch,
+    /// Open/use one caller-owned QUIC stream for this query.
+    open_doq_stream: Dispatch,
+    /// Perform one caller-owned HTTP request carrying application/dns-message.
+    perform_doh: Dispatch,
     complete: Completion,
     fail: Failure,
 };
@@ -103,6 +119,7 @@ pub const Error = client.Error || builder.Error || alias_mod.Error || response_m
     IdSpaceExhausted,
     EdnsFeatureWithoutOpt,
     UnknownTransaction,
+    CorrelationHandleRequired,
     UnexpectedState,
 };
 
@@ -125,8 +142,8 @@ pub fn Resolver(comptime config: Config) type {
             query_options: core.QueryOptions = .{},
             edns_required: bool = false,
             edns_enabled: bool = false,
-            preferred_transport: retry_mod.Transport = .udp,
-            transport: retry_mod.Transport = .udp,
+            preferred_transport: Transport = .udp,
+            transport: Transport = .udp,
             server_count: usize = 0,
             server_index: usize = 0,
             queries_sent: u8 = 0,
@@ -191,7 +208,7 @@ pub fn Resolver(comptime config: Config) type {
             slot.qtype = q.qtype;
             slot.qclass = q.qclass;
             try self.finishBegin(index, options);
-            return .{ .send = self.dispatch(index, .initial) };
+            return self.transportAction(index, .initial);
         }
 
         pub fn beginWire(self: *Self, q: client.WireQuestionKey, options: BeginOptions) Error!Action {
@@ -204,7 +221,7 @@ pub fn Resolver(comptime config: Config) type {
             slot.qtype = q.qtype;
             slot.qclass = q.qclass;
             try self.finishBegin(index, options);
-            return .{ .send = self.dispatch(index, .initial) };
+            return self.transportAction(index, .initial);
         }
 
         /// Build the current query into caller-owned packet/compression buffers.
@@ -236,11 +253,17 @@ pub fn Resolver(comptime config: Config) type {
         /// TCP where the transport does not already carry a query handle.
         pub fn matchResponse(self: *Self, bytes: []const u8) Error!Handle {
             const m = try message.Message.init(bytes);
+            var needs_handle = false;
             for (&self.storage.slots, 0..) |*slot, index| {
                 if (!slot.active or slot.phase != .awaiting_response) continue;
+                if (usesExternalCorrelation(slot.transport)) {
+                    if (slot.id == m.header.id) needs_handle = true;
+                    continue;
+                }
                 if (slot.id != m.header.id) continue;
                 return .{ .index = index, .generation = slot.generation };
             }
+            if (needs_handle) return error.CorrelationHandleRequired;
             return error.UnknownTransaction;
         }
 
@@ -317,7 +340,22 @@ pub fn Resolver(comptime config: Config) type {
 
         fn finishBegin(self: *Self, index: usize, options: BeginOptions) Error!void {
             _ = options;
-            self.storage.slots[index].id = try self.allocateId();
+            try self.refreshId(&self.storage.slots[index]);
+        }
+
+        fn refreshId(self: *Self, slot: *Slot) Error!void {
+            slot.id = if (usesExternalCorrelation(slot.transport)) 0 else try self.allocateId();
+        }
+
+        fn transportAction(self: *Self, index: usize, reason: DispatchReason) Action {
+            const dispatch_value = self.dispatch(index, reason);
+            return switch (dispatch_value.transport) {
+                .udp => .{ .send = dispatch_value },
+                .tcp => .{ .connect_tcp = dispatch_value },
+                .dot => .{ .connect_dot = dispatch_value },
+                .doq => .{ .open_doq_stream = dispatch_value },
+                .doh => .{ .perform_doh = dispatch_value },
+            };
         }
 
         fn takeGeneration(self: *Self) u32 {
@@ -374,7 +412,7 @@ pub fn Resolver(comptime config: Config) type {
         fn attempt(self: *Self, slot: *Slot) retry_mod.Attempt {
             _ = self;
             return .{
-                .transport = slot.transport,
+                .transport = if (slot.transport == .udp) .udp else .tcp,
                 .queries_sent = slot.queries_sent,
                 .other_servers_available = slot.server_index + 1 < slot.server_count,
                 .edns_used = slot.edns_enabled,
@@ -397,7 +435,7 @@ pub fn Resolver(comptime config: Config) type {
                 .fallback_tcp => {
                     slot.transport = .tcp;
                     slot.queries_sent = 1;
-                    slot.id = try self.allocateId();
+                    try self.refreshId(slot);
                     return .{ .connect_tcp = self.dispatch(handle.index, .truncated) };
                 },
                 .retry_other_server => return self.advanceServer(handle, decision.reason),
@@ -409,7 +447,7 @@ pub fn Resolver(comptime config: Config) type {
                     }
                     slot.edns_enabled = false;
                     slot.queries_sent += 1;
-                    slot.id = try self.allocateId();
+                    try self.refreshId(slot);
                     return .{ .retry = self.dispatch(handle.index, .edns_fallback) };
                 },
                 .terminal => return self.fail(handle, failureReason(decision.reason)),
@@ -423,8 +461,8 @@ pub fn Resolver(comptime config: Config) type {
             slot.transport = slot.preferred_transport;
             slot.queries_sent = 1;
             slot.edns_enabled = slot.query_options.udp_payload_size != null;
-            slot.id = try self.allocateId();
-            return .{ .send = self.dispatch(handle.index, .other_server) };
+            try self.refreshId(slot);
+            return self.transportAction(handle.index, .other_server);
         }
 
         fn followAlias(self: *Self, handle: Handle, parsed: message.Message, rr: message.Record, is_dname: bool) Error!Action {
@@ -452,8 +490,8 @@ pub fn Resolver(comptime config: Config) type {
 
             slot.saveChain(chain_state);
             slot.queries_sent = 1;
-            slot.id = try self.allocateId();
-            return .{ .send = self.dispatch(handle.index, .alias) };
+            try self.refreshId(slot);
+            return self.transportAction(handle.index, .alias);
         }
 
         fn aliasError(self: *Self, handle: Handle, err: alias_mod.Error) Error!Action {
@@ -477,6 +515,10 @@ pub fn Resolver(comptime config: Config) type {
             return .{ .fail = .{ .handle = handle, .reason = reason } };
         }
     };
+}
+
+fn usesExternalCorrelation(transport: Transport) bool {
+    return transport == .doq or transport == .doh;
 }
 
 fn failureReason(reason: retry_mod.Reason) FailureReason {

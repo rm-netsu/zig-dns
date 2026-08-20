@@ -13,6 +13,7 @@ const Dispatch = high.Dispatch;
 const DispatchReason = high.DispatchReason;
 const CompletionKind = high.CompletionKind;
 const FailureReason = high.FailureReason;
+const Transport = high.Transport;
 
 fn expectActionTag(expected: std.meta.Tag(Action), action: Action) !void {
     try std.testing.expectEqual(expected, std.meta.activeTag(action));
@@ -63,7 +64,7 @@ test "UDP truncation switches to TCP with a fresh transaction id" {
     const bytes = try responsePacket(&packet, &compression, first, q, .{ .response = true, .truncated = true });
     const next = try r.onResponse(first.handle, bytes);
     try expectActionTag(.connect_tcp, next);
-    try std.testing.expectEqual(retry_mod.Transport.tcp, next.connect_tcp.transport);
+    try std.testing.expectEqual(Transport.tcp, next.connect_tcp.transport);
     try std.testing.expect(first.id != next.connect_tcp.id);
 
     var query_packet: [256]u8 = undefined;
@@ -220,4 +221,46 @@ test "malformed alias retries another server without mutating the chain" {
 
     var presentation: [64]u8 = undefined;
     try std.testing.expectEqualStrings("a.example", try r.writeCurrentNamePresentation(first.handle, &presentation));
+}
+
+test "DoT DoQ and DoH produce transport-specific caller actions" {
+    const R = Resolver(.{ .max_queries = 4, .max_alias_depth = 2, .alias_storage_bytes = 64 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+
+    const dot = try r.beginPresentation(.{ .name = "dot.example", .qtype = .A }, .{ .transport = .dot });
+    try expectActionTag(.connect_dot, dot);
+    try std.testing.expect(dot.connect_dot.id != 0);
+
+    const doq_a = try r.beginPresentation(.{ .name = "a.doq.example", .qtype = .A }, .{ .transport = .doq });
+    const doq_b = try r.beginPresentation(.{ .name = "b.doq.example", .qtype = .AAAA }, .{ .transport = .doq });
+    try expectActionTag(.open_doq_stream, doq_a);
+    try expectActionTag(.open_doq_stream, doq_b);
+    try std.testing.expectEqual(@as(u16, 0), doq_a.open_doq_stream.id);
+    try std.testing.expectEqual(@as(u16, 0), doq_b.open_doq_stream.id);
+
+    const doh = try r.beginPresentation(.{ .name = "doh.example", .qtype = .A }, .{ .transport = .doh });
+    try expectActionTag(.perform_doh, doh);
+    try std.testing.expectEqual(@as(u16, 0), doh.perform_doh.id);
+}
+
+test "stream-correlated zero-ID transports require the caller handle" {
+    const R = Resolver(.{ .max_queries = 2, .max_alias_depth = 2, .alias_storage_bytes = 64 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .A }, .{ .transport = .doq })).open_doq_stream;
+    _ = try r.beginPresentation(.{ .name = "b.example", .qtype = .A }, .{ .transport = .doq });
+
+    const q = try r.currentQuestion(first.handle);
+    var packet: [256]u8 = undefined;
+    var compression: [12]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, 0, .{ .response = true });
+    try b.addQuestionWire(q.name, q.qtype, q.qclass);
+    try b.addA(.answer, "a.example", 60, .{ 192, 0, 2, 1 });
+    const bytes = try b.finish();
+
+    try std.testing.expectError(error.CorrelationHandleRequired, r.matchResponse(bytes));
+    const done = try r.onResponse(first.handle, bytes);
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(CompletionKind.answer, done.complete.kind);
 }
