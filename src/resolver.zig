@@ -7,6 +7,7 @@ const edns = @import("edns.zig");
 
 pub const response = @import("resolver/response.zig");
 pub const alias = @import("resolver/alias.zig");
+pub const referral = @import("resolver/referral.zig");
 
 pub const QueryOptions = struct {
     recursion_desired: bool = true,

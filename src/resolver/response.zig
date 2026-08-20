@@ -4,8 +4,9 @@ const name_mod = @import("../name.zig");
 const message = @import("../message.zig");
 const client = @import("../client.zig");
 const builder = @import("../builder.zig");
+const referral_mod = @import("referral.zig");
 
-pub const Error = message.ParseError;
+pub const Error = referral_mod.Error;
 
 /// Transport-neutral semantic classification of a transaction-matched QUERY
 /// response. `cname`/`dname` borrow the corresponding RR from `Message`.
@@ -80,7 +81,10 @@ pub fn classify(m: message.Message, q: client.QuestionKey) Error!Outcome {
         }
     }
 
-    if (has_ns and !has_soa) return .referral;
+    if (has_ns and !has_soa) {
+        _ = try referral_mod.Referral.init(m, q);
+        return .referral;
+    }
     return .nodata;
 }
 
@@ -194,4 +198,16 @@ test "class mismatch and unrelated aliases do not fabricate an answer" {
     try b.addNameRecord(.answer, "other.example", .CNAME, 60, "target.example");
     try b.addRawRecord(.answer, "wanted.example", .A, @enumFromInt(3), 60, &.{ 192, 0, 2, 1 });
     try expectTag(.nodata, try classify(try messageFromBuilder(&b), .{ .name = "wanted.example", .qtype = .A }));
+}
+
+test "does not classify unrelated authority NS as referral" {
+    var buf: [512]u8 = undefined;
+    var compression: [24]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&buf, &compression, 15, .{ .response = true });
+    try b.addQuestion("wanted.example", .A, .IN);
+    try b.addNameRecord(.authority, "unrelated.test", .NS, 60, "ns.unrelated.test");
+    try std.testing.expectError(
+        error.NotReferral,
+        classify(try messageFromBuilder(&b), .{ .name = "wanted.example", .qtype = .A }),
+    );
 }
