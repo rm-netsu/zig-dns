@@ -48,8 +48,8 @@ pub const ClientAddress = union(enum) {
     ipv4: [4]u8,
     ipv6: [16]u8,
 
-    fn bytes(self: ClientAddress) []const u8 {
-        return switch (self) {
+    fn bytes(self: *const ClientAddress) []const u8 {
+        return switch (self.*) {
             .ipv4 => |*v| v,
             .ipv6 => |*v| v,
         };
