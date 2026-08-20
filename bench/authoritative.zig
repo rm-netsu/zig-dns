@@ -3,6 +3,7 @@ const dns = @import("dns");
 const corpus = @import("real_corpus.zig");
 
 const exact_rounds = 160_000;
+const signed_rounds = 100_000;
 const negative_rounds = 160_000;
 
 fn wire(comptime presentation: []const u8) [presentation.len + 2]u8 {
@@ -98,6 +99,23 @@ pub fn main(init: std.process.Init) !void {
     try benchCompose(io, "authoritative.real_txt_rrset", exact_rounds, &chatgpt_composer, try txt_query.message());
     try benchCompose(io, "authoritative.negative_soa", negative_rounds, &cloudflare_composer, try nx_query.message());
 
+    var key_name_storage: [64]u8 = undefined;
+    const key = try dns.tsig.auth.Key.init("bench-key.cloudflare.com", "authoritative benchmark secret", &key_name_storage);
+    var signed_query_buf: [512]u8 = undefined;
+    var signed_query_compression: [16]dns.CompressionEntry = undefined;
+    var signed_query_builder = try dns.Builder.init(&signed_query_buf, &signed_query_compression, 0x5252, .{});
+    try signed_query_builder.addQuestion("cloudflare.com", .A, .IN);
+    try signed_query_builder.addOpt(1232, 0, 0, .{}, &.{});
+    var request_mac = try dns.tsig.auth.signBuilder(&signed_query_builder, key, .{ .time_signed = 1_700_000_000 });
+    defer request_mac.deinit();
+    const signed_query = try dns.Message.init(try signed_query_builder.finish());
+    const response_sign_options: dns.tsig.auth.SignOptions = .{
+        .time_signed = 1_700_000_001,
+        .request_mac = request_mac.slice(),
+    };
+    const tail_reserve = try dns.tsig.auth.signedRecordWireSize(key, response_sign_options, true);
+    try benchComposeTsig(io, "authoritative.real_a_rrset_tsig", signed_rounds, &cloudflare_composer, signed_query, key, response_sign_options, tail_reserve);
+
     std.debug.print("authoritative.slice_store: {d} bytes\n", .{@sizeOf(dns.authoritative.SliceStore)});
     std.debug.print("authoritative.composer: {d} bytes\n", .{@sizeOf(dns.authoritative.Composer(dns.authoritative.SliceStore))});
 }
@@ -136,6 +154,32 @@ fn benchCompose(
         const result = try composer.compose(query, &out, &compression, .{});
         checksum +%= result.bytes.len + @intFromEnum(result.kind);
         std.mem.doNotOptimizeAway(out);
+    }
+    const elapsed = std.Io.Clock.awake.now(io).nanoseconds - start;
+    std.mem.doNotOptimizeAway(checksum);
+    report(label, rounds, elapsed);
+}
+
+fn benchComposeTsig(
+    io: std.Io,
+    label: []const u8,
+    rounds: usize,
+    composer: *dns.authoritative.Composer(dns.authoritative.SliceStore),
+    query: dns.Message,
+    key: dns.tsig.auth.Key,
+    sign_options: dns.tsig.auth.SignOptions,
+    tail_reserve: usize,
+) !void {
+    var out: [1232]u8 = undefined;
+    var compression: [96]dns.CompressionEntry = undefined;
+    var checksum: usize = 0;
+    const start = std.Io.Clock.awake.now(io).nanoseconds;
+    for (0..rounds) |_| {
+        const result = try composer.compose(query, &out, &compression, .{ .tail_reserve = tail_reserve });
+        var signed = try dns.tsig.auth.signInPlace(&out, result.bytes.len, key, sign_options);
+        checksum +%= signed.bytes.len + signed.mac.len;
+        std.mem.doNotOptimizeAway(out);
+        signed.deinit();
     }
     const elapsed = std.Io.Clock.awake.now(io).nanoseconds - start;
     std.mem.doNotOptimizeAway(checksum);

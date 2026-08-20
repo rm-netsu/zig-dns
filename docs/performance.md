@@ -12,6 +12,7 @@ zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
 zig build bench-resolver -Doptimize=ReleaseFast
 zig build bench-high-level -Doptimize=ReleaseFast
+zig build bench-authoritative -Doptimize=ReleaseFast
 ```
 
 For cross-release core A/B measurements, compile the **same current benchmark
@@ -199,6 +200,24 @@ release candidate, and none of these deltas exceeds the observed paired spread.
 The result is therefore classified as **no confirmed core regression**, not as
 an optimization claim. Raw samples are retained in
 `bench/results/core-real-corpus-v0.5.0-v0.6.0-rc-2026-08-20.json`.
+
+## 0.7.0 authoritative baseline
+
+Authoritative response composition is new in 0.7.0, so these are baselines rather than cross-release speedup claims. The benchmark reuses fixed real RRsets from the normal core corpus and performs no socket, filesystem, allocator, zone-database, TLS, or QUIC work. Five ReleaseFast runs were sampled; the table reports median latency and median absolute deviation (MAD):
+
+| Workload | Median | MAD |
+| --- | ---: | ---: |
+| compose real `cloudflare.com` A RRset | 638 ns/op | 25.6 ns |
+| compose real `cloudflare.com` CAA RRset | 924 ns/op | 21.2 ns |
+| compose real `chatgpt.com` TXT RRset | 796 ns/op | 12.8 ns |
+| compose NXDOMAIN + RFC 2308 SOA | 1,890 ns/op | 47.0 ns |
+| compose real A response + exact TSIG reserve + HMAC-SHA256 in-place signing | 1,114 ns/op | 33.1 ns |
+
+The reference `SliceStore` descriptor is 32 bytes and `Composer(SliceStore)` is 8 bytes on the benchmark x86_64 target. The store benchmark intentionally uses linear scans; indexed production stores can implement the same structural interface without changing composer ownership.
+
+The TSIG workload includes the response HMAC and secure-zeroing the returned MAC. The signed request MAC is prepared before timing. Exact tail reservation is part of the compose call, so the measured path exercises the production rule that OPT/ordinary RRsets must leave sufficient room for final TSIG without exceeding the negotiated UDP response limit.
+
+Raw samples are retained in `bench/results/authoritative-v0.7.0-dev-2026-08-20.json`.
 
 ## Benchmark policy
 

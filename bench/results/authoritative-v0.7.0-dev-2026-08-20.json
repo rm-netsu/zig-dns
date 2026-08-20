@@ -1,0 +1,73 @@
+{
+  "date": "2026-08-20",
+  "zig": "0.16.0",
+  "optimize": "ReleaseFast",
+  "benchmark_hash": "a12c2641442c",
+  "runs": 5,
+  "notes": [
+    "fixed real-RRset corpus; no network I/O",
+    "negative SOA zone record is synthetic",
+    "TSIG workload includes exact tail reservation, HMAC-SHA256 response signing, and MAC zeroization"
+  ],
+  "metrics": {
+    "authoritative.real_a_rrset": {
+      "samples_ns_per_op": [
+        672.15,
+        616.25,
+        612.39,
+        697.57,
+        638.03
+      ],
+      "median_ns_per_op": 638.03,
+      "mad_ns_per_op": 25.639999999999986
+    },
+    "authoritative.real_caa_rrset": {
+      "samples_ns_per_op": [
+        907.67,
+        924.3,
+        903.07,
+        946.52,
+        959.21
+      ],
+      "median_ns_per_op": 924.3,
+      "mad_ns_per_op": 21.229999999999905
+    },
+    "authoritative.real_txt_rrset": {
+      "samples_ns_per_op": [
+        825.84,
+        794.32,
+        783.52,
+        823.89,
+        796.28
+      ],
+      "median_ns_per_op": 796.28,
+      "mad_ns_per_op": 12.759999999999991
+    },
+    "authoritative.negative_soa": {
+      "samples_ns_per_op": [
+        2196.18,
+        1842.82,
+        1840.9,
+        1933.75,
+        1889.84
+      ],
+      "median_ns_per_op": 1889.84,
+      "mad_ns_per_op": 47.01999999999998
+    },
+    "authoritative.real_a_rrset_tsig": {
+      "samples_ns_per_op": [
+        1327.44,
+        1080.53,
+        1087.99,
+        1113.63,
+        1149.82
+      ],
+      "median_ns_per_op": 1113.63,
+      "mad_ns_per_op": 33.100000000000136
+    }
+  },
+  "state_bytes": {
+    "SliceStore": 32,
+    "Composer(SliceStore)": 8
+  }
+}
