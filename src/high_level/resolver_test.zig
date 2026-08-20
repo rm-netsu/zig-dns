@@ -27,6 +27,12 @@ fn responsePacket(out: []u8, compression: []builder.CompressionEntry, dispatch: 
     return b.finish();
 }
 
+test "default high-level storage remains within explicit persistent-state budget" {
+    const R = Resolver(.{});
+    try std.testing.expect(@sizeOf(R.Storage) <= 96 * 1024);
+    try std.testing.expect(@sizeOf(R) <= 64);
+}
+
 test "bounded resolver allocates unique ids and matches out-of-order responses" {
     const R = Resolver(.{ .max_queries = 2, .max_alias_depth = 4, .alias_storage_bytes = 128 });
     var storage: R.Storage = undefined;
@@ -98,6 +104,65 @@ test "CNAME continuation updates the current query and detects loops" {
     const loop = try r.onResponse(first.handle, try b2.finish());
     try expectActionTag(.fail, loop);
     try std.testing.expectEqual(FailureReason.alias_loop, loop.fail.reason);
+}
+
+test "CNAME chain completes from a single recursive response" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 4, .alias_storage_bytes = 128 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .A }, .{})).send;
+
+    var packet: [768]u8 = undefined;
+    var compression: [32]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("a.example", .A, .IN);
+    try b.addNameRecord(.answer, "a.example", .CNAME, 60, "b.example");
+    try b.addNameRecord(.answer, "b.example", .CNAME, 60, "c.example");
+    try b.addA(.answer, "c.example", 60, .{ 192, 0, 2, 3 });
+
+    const done = try r.onValidatedResponse(first.handle, try b.finish(), 10, .secure);
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(CompletionKind.answer, done.complete.kind);
+    try std.testing.expectEqual(SecurityStatus.secure, done.complete.security);
+
+    var presentation: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("c.example", try r.writeCurrentNamePresentation(first.handle, &presentation));
+}
+
+test "CNAME-only response dispatches the unresolved target" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 3, .alias_storage_bytes = 96 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .A }, .{})).send;
+
+    var packet: [512]u8 = undefined;
+    var compression: [24]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("a.example", .A, .IN);
+    try b.addNameRecord(.answer, "a.example", .CNAME, 60, "b.example");
+
+    const next = try r.onResponse(first.handle, try b.finish());
+    try expectActionTag(.send, next);
+    try std.testing.expectEqual(DispatchReason.alias, next.send.reason);
+    try std.testing.expect(first.id != next.send.id);
+}
+
+test "CNAME plus SOA can complete NODATA without another query" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 3, .alias_storage_bytes = 128 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .AAAA }, .{})).send;
+
+    var packet: [768]u8 = undefined;
+    var compression: [32]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("a.example", .AAAA, .IN);
+    try b.addNameRecord(.answer, "a.example", .CNAME, 60, "b.example");
+    try b.addSoa(.authority, "example", 60, "ns.example", "hostmaster.example", 1, 3600, 600, 86400, 60);
+
+    const done = try r.onResponse(first.handle, try b.finish());
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(CompletionKind.nodata, done.complete.kind);
 }
 
 test "optional EDNS FORMERR retries once without OPT" {
@@ -318,6 +383,23 @@ test "stub integration can accept a referral as terminal" {
     try std.testing.expectEqual(CompletionKind.referral, done.complete.kind);
 }
 
+test "bogus validated response fails before cache or completion" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 2, .alias_storage_bytes = 64 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "bogus.example", .qtype = .A }, .{})).send;
+
+    var packet: [256]u8 = undefined;
+    var compression: [12]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("bogus.example", .A, .IN);
+    try b.addA(.answer, "bogus.example", 60, .{ 192, 0, 2, 9 });
+
+    const failed = try r.onValidatedResponse(first.handle, try b.finish(), 100, .bogus);
+    try expectActionTag(.fail, failed);
+    try std.testing.expectEqual(FailureReason.dnssec_bogus, failed.fail.reason);
+}
+
 const TestCache = struct {
     hit: ?high.CacheHit = null,
     stores: usize = 0,
@@ -363,6 +445,33 @@ test "cache hook can complete before any network dispatch" {
     var compression: [8]builder.CompressionEntry = undefined;
     try std.testing.expectError(error.UnexpectedState, r.writeQuery(action.complete.handle, &packet, &compression, &.{}));
     try r.release(action.complete.handle);
+}
+
+test "bogus cache hit is rejected and alias cache hit composes security" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 3, .alias_storage_bytes = 96 });
+    var storage: R.Storage = undefined;
+    var cache: TestCache = .{ .hit = .{ .kind = .answer, .security = .bogus, .token = 1 } };
+    var r = R.initInPlaceWithCache(&storage, cache.hooks());
+
+    const rejected = try r.beginPresentation(.{ .name = "bad-cache.example", .qtype = .A }, .{});
+    try expectActionTag(.fail, rejected);
+    try std.testing.expectEqual(FailureReason.dnssec_bogus, rejected.fail.reason);
+    try r.release(rejected.fail.handle);
+
+    cache.hit = null;
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .A }, .{})).send;
+    var packet: [512]u8 = undefined;
+    var compression: [24]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("a.example", .A, .IN);
+    try b.addNameRecord(.answer, "a.example", .CNAME, 60, "b.example");
+
+    cache.hit = .{ .kind = .answer, .security = .insecure, .token = 2 };
+    const cached = try r.onValidatedResponse(first.handle, try b.finish(), 5, .secure);
+    try expectActionTag(.complete, cached);
+    try std.testing.expectEqual(CompletionSource.cache, cached.complete.source);
+    try std.testing.expectEqual(SecurityStatus.insecure, cached.complete.security);
+    try std.testing.expectEqual(@as(?usize, 2), cached.complete.cache_token);
 }
 
 test "validated network completion stores security and injected response time" {

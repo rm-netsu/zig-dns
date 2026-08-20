@@ -118,6 +118,7 @@ pub const FailureReason = enum {
     alias_loop,
     alias_limit,
     alias_storage,
+    dnssec_bogus,
 };
 
 pub const Failure = struct {
@@ -342,38 +343,57 @@ pub fn Resolver(comptime config: Config) type {
             const parsed = client.validateResponseWire(slot.id, slot.currentQuestion(), bytes) catch {
                 return self.applyRetry(handle, .malformed_response);
             };
-            const inspected = retry_mod.inspectWire(parsed, slot.currentQuestion()) catch {
-                return self.applyRetry(handle, .malformed_response);
-            };
+            if (security == .bogus) return self.fail(handle, .dnssec_bogus);
 
-            switch (inspected.outcome) {
-                .cname => |rr| {
-                    self.noteSecurity(slot, security);
-                    return self.followAlias(handle, parsed, rr, false);
-                },
-                .dname => |rr| {
-                    self.noteSecurity(slot, security);
-                    return self.followAlias(handle, parsed, rr, true);
-                },
-                .answer => {
-                    self.noteSecurity(slot, security);
-                    return self.completeNetwork(handle, .answer, parsed, now);
-                },
-                .nodata => {
-                    self.noteSecurity(slot, security);
-                    return self.completeNetwork(handle, .nodata, parsed, now);
-                },
-                .nxdomain => {
-                    self.noteSecurity(slot, security);
-                    return self.completeNetwork(handle, .nxdomain, parsed, now);
-                },
-                .referral => {
-                    self.noteSecurity(slot, security);
-                    const referral = try referral_mod.Referral.initWire(parsed, slot.currentQuestion());
-                    slot.phase = .referral_pending;
-                    return .{ .referral = .{ .handle = handle, .view = referral, .server_index = slot.server_index } };
-                },
-                else => return self.applyDecision(handle, retry_mod.plan(self.attempt(slot), .{ .response = inspected })),
+            var followed_alias = false;
+            while (true) {
+                slot = try self.slotFor(handle);
+                const inspected = retry_mod.inspectWire(parsed, slot.currentQuestion()) catch {
+                    return self.applyRetry(handle, .malformed_response);
+                };
+
+                switch (inspected.outcome) {
+                    .cname => |rr| {
+                        if (try self.advanceAlias(handle, parsed, rr, false)) |terminal| return terminal;
+                        slot = try self.slotFor(handle);
+                        self.noteSecurity(slot, security);
+                        followed_alias = true;
+                    },
+                    .dname => |rr| {
+                        if (try self.advanceAlias(handle, parsed, rr, true)) |terminal| return terminal;
+                        slot = try self.slotFor(handle);
+                        self.noteSecurity(slot, security);
+                        followed_alias = true;
+                    },
+                    .answer => {
+                        self.noteSecurity(slot, security);
+                        return self.completeNetwork(handle, .answer, parsed, now);
+                    },
+                    .nodata => {
+                        // After following a CNAME/DNAME inside this packet, an
+                        // empty Authority section means the recursive answer
+                        // simply stopped at the alias. Query the target rather
+                        // than inventing NODATA for a name that was not the
+                        // packet's Question. An SOA is sufficient negative
+                        // evidence to complete NODATA in the same response.
+                        if (followed_alias and !try hasAuthoritySoa(parsed, slot.qclass)) {
+                            return self.dispatchAlias(handle);
+                        }
+                        self.noteSecurity(slot, security);
+                        return self.completeNetwork(handle, .nodata, parsed, now);
+                    },
+                    .nxdomain => {
+                        self.noteSecurity(slot, security);
+                        return self.completeNetwork(handle, .nxdomain, parsed, now);
+                    },
+                    .referral => {
+                        self.noteSecurity(slot, security);
+                        const referral = try referral_mod.Referral.initWire(parsed, slot.currentQuestion());
+                        slot.phase = .referral_pending;
+                        return .{ .referral = .{ .handle = handle, .view = referral, .server_index = slot.server_index } };
+                    },
+                    else => return self.applyDecision(handle, retry_mod.plan(self.attempt(slot), .{ .response = inspected })),
+                }
             }
         }
 
@@ -453,15 +473,23 @@ pub fn Resolver(comptime config: Config) type {
             const hooks = self.cache_hooks orelse return null;
             var slot = &self.storage.slots[index];
             const hit = hooks.lookup(hooks.context, slot.currentQuestion(), now) orelse return null;
+            if (hit.security == .bogus) {
+                slot.phase = .failed;
+                return .{ .fail = .{ .handle = self.handleFor(index), .reason = .dnssec_bogus } };
+            }
+            if (slot.security_set) {
+                slot.security = combineSecurity(slot.security, hit.security);
+            } else {
+                slot.security = hit.security;
+                slot.security_set = true;
+            }
             slot.phase = .complete;
-            slot.security = hit.security;
-            slot.security_set = true;
             return .{ .complete = .{
                 .handle = self.handleFor(index),
                 .kind = hit.kind,
-                .server_index = 0,
+                .server_index = slot.server_index,
                 .source = .cache,
-                .security = hit.security,
+                .security = slot.security,
                 .cache_token = hit.token,
             } };
         }
@@ -603,13 +631,13 @@ pub fn Resolver(comptime config: Config) type {
             return self.transportAction(handle.index, .other_server);
         }
 
-        fn followAlias(self: *Self, handle: Handle, parsed: message.Message, rr: message.Record, is_dname: bool) Error!Action {
+        fn advanceAlias(self: *Self, handle: Handle, parsed: message.Message, rr: message.Record, is_dname: bool) Error!?Action {
             var slot = try self.slotFor(handle);
             var chain_state = slot.chain();
 
             if (is_dname) {
-                // If the response carries the synthesized CNAME required by a
-                // recursive DNAME response, verify it before advancing.
+                // A synthesized CNAME may be absent in DNSSEC-aware DNAME
+                // responses. If present, verify it before advancing.
                 var answers = try parsed.records(.answer);
                 while (try answers.next()) |candidate| {
                     if (candidate.rr_type != .CNAME or candidate.class != slot.qclass) continue;
@@ -617,16 +645,23 @@ pub fn Resolver(comptime config: Config) type {
                     const current_name = try name_mod.Name.init(current.bytes, 0);
                     if (!try candidate.name.eqlIgnoreCase(current_name)) continue;
                     alias_mod.validateSynthesizedCname(current, rr, candidate) catch {
-                        return self.applyRetry(handle, .malformed_response);
+                        return try self.applyRetry(handle, .malformed_response);
                     };
                     break;
                 }
-                chain_state.followDname(rr) catch |err| return self.aliasError(handle, err);
+                chain_state.followDname(rr) catch |err| return try self.aliasError(handle, err);
             } else {
-                chain_state.followCname(rr) catch |err| return self.aliasError(handle, err);
+                chain_state.followCname(rr) catch |err| return try self.aliasError(handle, err);
             }
 
             slot.saveChain(chain_state);
+            return null;
+        }
+
+        fn dispatchAlias(self: *Self, handle: Handle) Error!Action {
+            var slot = try self.slotFor(handle);
+            if (self.lookupCache(handle.index, slot.now)) |cached| return cached;
+            slot = try self.slotFor(handle);
             slot.queries_sent = 1;
             try self.refreshId(slot);
             return self.transportAction(handle.index, .alias);
@@ -667,6 +702,14 @@ pub fn Resolver(comptime config: Config) type {
             return .{ .fail = .{ .handle = handle, .reason = reason } };
         }
     };
+}
+
+fn hasAuthoritySoa(parsed: message.Message, qclass: types.Class) message.ParseError!bool {
+    var authority = try parsed.records(.authority);
+    while (try authority.next()) |rr| {
+        if (rr.class == qclass and rr.rr_type == .SOA) return true;
+    }
+    return false;
 }
 
 fn combineSecurity(a: SecurityStatus, b: SecurityStatus) SecurityStatus {
