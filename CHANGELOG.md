@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-20
+
 - Replace synthetic core microbenchmarks with a deterministic real-RRset wire corpus and an interleaved cross-tag A/B runner that reports MAD and paired regression deltas.
 - Add zero-copy resolver response classification for answers, CNAME/DNAME, referrals, NODATA/NXDOMAIN, truncation, and terminal RCODEs.
 - Add bounded caller-owned CNAME/DNAME chains with loop/depth/storage limits, DNAME substitution, and synthesized-CNAME validation.
