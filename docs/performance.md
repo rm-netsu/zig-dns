@@ -11,6 +11,7 @@ zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
 zig build bench-resolver -Doptimize=ReleaseFast
+zig build bench-high-level -Doptimize=ReleaseFast
 ```
 
 For cross-release core A/B measurements, compile the **same current benchmark
@@ -161,6 +162,43 @@ performs no pre-indexing. Its cost is therefore a useful baseline for a future
 optional caller-scratch index if iterative-resolver profiling shows referral
 processing to be material. No heap allocation or network I/O is included in
 any resolver benchmark.
+
+## 0.6.0 high-level resolver baseline
+
+The bounded high-level lifecycle is new in 0.6.0. The benchmark uses the same
+real-data corpus where a received response is needed and does not perform
+socket, TLS, QUIC, HTTP, timer, or allocator work. Five ReleaseFast runs were
+sampled; the table reports median latency and median absolute deviation (MAD):
+
+| Lifecycle | Median | MAD |
+| --- | ---: | ---: |
+| begin -> real `cloudflare.com A` response -> complete -> release | 532 ns/op | 16 ns |
+| begin -> real `status.openai.com` CNAME + terminal A records in one response -> complete -> release | 1,399 ns/op | 18 ns |
+| begin UDP -> TC response -> TCP action -> real A response -> complete -> release | 655 ns/op | 7 ns |
+| begin -> caller cache-hook hit -> complete -> release | 82 ns/op | 3 ns |
+
+With the default compile-time configuration (`max_queries=64`,
+`max_alias_depth=16`, `alias_storage_bytes=1024`) the caller-owned
+`Resolver.Storage` is **87,552 bytes** on the benchmark x86_64 target, or 1,368
+bytes per maximum concurrent query. The resolver descriptor itself is 48 bytes.
+No persistent state grows with response size or number of retries.
+
+A 28-round interleaved ReleaseFast regression review compiled the same real
+core benchmark source (hash `23c4a01c33`) against `v0.5.0` and the 0.6 high-level
+release candidate. Paired median throughput deltas were:
+
+| Existing core workload | 0.6 candidate vs v0.5.0 paired median | paired MAD |
+| --- | ---: | ---: |
+| parse real corpus | -0.00% | 2.87 pp |
+| strict validate | -1.03% | 3.38 pp |
+| parse + materialize names | -0.93% | 5.70 pp |
+| build real corpus | +0.18% | 2.49 pp |
+
+No existing parser/validator/name/builder hot-path source changed in this
+release candidate, and none of these deltas exceeds the observed paired spread.
+The result is therefore classified as **no confirmed core regression**, not as
+an optimization claim. Raw samples are retained in
+`bench/results/core-real-corpus-v0.5.0-v0.6.0-rc-2026-08-20.json`.
 
 ## Benchmark policy
 

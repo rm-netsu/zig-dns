@@ -116,6 +116,17 @@ pub fn build(b: *std.Build) void {
     const resolver_bench_step = b.step("bench-resolver", "Benchmark resolver semantic primitives");
     resolver_bench_step.dependOn(&b.addRunArtifact(resolver_bench).step);
 
+    const high_level_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/high_level.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const high_level_bench = b.addExecutable(.{ .name = "dns-high-level-bench", .root_module = high_level_bench_mod });
+    check.dependOn(&high_level_bench.step);
+    const high_level_bench_step = b.step("bench-high-level", "Benchmark high-level resolver lifecycles");
+    high_level_bench_step.dependOn(&b.addRunArtifact(high_level_bench).step);
+
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);
