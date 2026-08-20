@@ -5,6 +5,8 @@ const name_mod = @import("name.zig");
 
 pub const canonical = @import("dnssec/canonical.zig");
 pub const CanonicalWriter = canonical.Writer;
+pub const rrset = @import("dnssec/rrset.zig");
+pub const Rrset = rrset.Rrset;
 
 pub const Error = name_mod.Error || error{ InvalidLength, InvalidBitmap, Truncated, InvalidDnskey };
 

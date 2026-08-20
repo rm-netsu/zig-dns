@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const name_mod = @import("../name.zig");
 const message = @import("../message.zig");
+const rdata = @import("../rdata.zig");
 
 pub const Error = name_mod.Error || error{
     NoSpace,
@@ -48,6 +49,49 @@ pub const Writer = struct {
         const rdata_len = self.pos - rdata_start;
         if (rdata_len > std.math.maxInt(u16)) return error.RdataTooLong;
         std.mem.writeInt(u16, self.out[rdlength_pos..][0..2], @intCast(rdata_len), .big);
+    }
+
+    /// Write only the canonical RDATA. This is useful for RFC 4034 RRset
+    /// ordering without materializing complete canonical records.
+    pub fn writeRdata(self: *Writer, rr: message.Record) Error!void {
+        const mark = self.pos;
+        errdefer self.pos = mark;
+        try self.writeCanonicalRdata(rr);
+    }
+
+    /// Write an RR as it appears in RRSIG signed data, including wildcard
+    /// owner reconstruction driven by the RRSIG Labels field.
+    pub fn writeSignedRecord(self: *Writer, rr: message.Record, original_ttl: u32, labels: u8) Error!void {
+        const mark = self.pos;
+        errdefer self.pos = mark;
+
+        try self.writeSignedOwner(rr.name, labels);
+        try self.writeU16(@intFromEnum(rr.rr_type));
+        try self.writeU16(@intFromEnum(rr.class));
+        try self.writeU32(original_ttl);
+
+        const rdlength_pos = self.pos;
+        try self.writeU16(0);
+        const rdata_start = self.pos;
+        try self.writeCanonicalRdata(rr);
+        const rdata_len = self.pos - rdata_start;
+        if (rdata_len > std.math.maxInt(u16)) return error.RdataTooLong;
+        std.mem.writeInt(u16, self.out[rdlength_pos..][0..2], @intCast(rdata_len), .big);
+    }
+
+    /// Write the RRSIG RDATA fields covered by the signature, excluding the
+    /// Signature field itself (RFC 4035 section 5.3.2).
+    pub fn writeRrsigPrefix(self: *Writer, sig: rdata.Rrsig) Error!void {
+        const mark = self.pos;
+        errdefer self.pos = mark;
+        try self.writeU16(sig.type_covered);
+        try self.writeByte(sig.algorithm);
+        try self.writeByte(sig.labels);
+        try self.writeU32(sig.original_ttl);
+        try self.writeU32(sig.expiration);
+        try self.writeU32(sig.inception);
+        try self.writeU16(sig.key_tag);
+        try self.writeCanonicalName(sig.signer_name);
     }
 
     fn writeCanonicalRdata(self: *Writer, rr: message.Record) Error!void {
@@ -183,6 +227,34 @@ pub const Writer = struct {
         return consumed;
     }
 
+    fn writeSignedOwner(self: *Writer, n: name_mod.Name, labels: u8) Error!void {
+        var buf: [name_mod.Name.max_wire_len]u8 = undefined;
+        const wire = try n.writeCanonicalWire(&buf);
+        var offsets: [127]u8 = undefined;
+        var count: usize = 0;
+        var pos: usize = 0;
+        while (wire[pos] != 0) {
+            if (count == offsets.len) return error.InvalidRdata;
+            offsets[count] = @intCast(pos);
+            count += 1;
+            pos += 1 + wire[pos];
+        }
+        if (@as(usize, labels) > count) return error.InvalidRdata;
+        if (@as(usize, labels) == count) {
+            try self.writeAll(wire);
+            return;
+        }
+
+        try self.writeByte(1);
+        try self.writeByte('*');
+        if (labels == 0) {
+            try self.writeByte(0);
+        } else {
+            const suffix = offsets[count - labels];
+            try self.writeAll(wire[suffix..]);
+        }
+    }
+
     fn writeCanonicalName(self: *Writer, n: name_mod.Name) Error!void {
         var buf: [name_mod.Name.max_wire_len]u8 = undefined;
         const wire = try n.writeCanonicalWire(&buf);
@@ -199,6 +271,12 @@ pub const Writer = struct {
         if (bytes.len > self.out.len - self.pos) return error.NoSpace;
         @memcpy(self.out[self.pos..][0..bytes.len], bytes);
         self.pos += bytes.len;
+    }
+
+    fn writeByte(self: *Writer, value: u8) Error!void {
+        if (self.pos == self.out.len) return error.NoSpace;
+        self.out[self.pos] = value;
+        self.pos += 1;
     }
 
     fn writeU16(self: *Writer, value: u16) Error!void {
