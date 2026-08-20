@@ -60,6 +60,28 @@ pub fn build(b: *std.Build) void {
     const run_dnssec = b.addRunArtifact(dnssec_example);
     dnssec_step.dependOn(&run_dnssec.step);
 
+    const core_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/core.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const core_bench = b.addExecutable(.{ .name = "dns-core-bench", .root_module = core_bench_mod });
+    check.dependOn(&core_bench.step);
+    const core_bench_step = b.step("bench-core", "Benchmark core DNS hot paths");
+    core_bench_step.dependOn(&b.addRunArtifact(core_bench).step);
+
+    const dnssec_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/dnssec.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const dnssec_bench = b.addExecutable(.{ .name = "dns-dnssec-bench", .root_module = dnssec_bench_mod });
+    check.dependOn(&dnssec_bench.step);
+    const dnssec_bench_step = b.step("bench-dnssec", "Benchmark DNSSEC hot paths");
+    dnssec_bench_step.dependOn(&b.addRunArtifact(dnssec_bench).step);
+
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);
