@@ -73,6 +73,9 @@ pub const TruncationPolicy = struct {
 
 pub const SignOptions = struct {
     time_signed: u64,
+    /// DNS ID before forwarding/rewriting. Defaults to the current header ID.
+    /// RFC 8945 requires this value to replace the current ID in MAC input.
+    original_id: ?u16 = null,
     fudge: u16 = record_mod.recommended_fudge,
     error_code: record_mod.ErrorCode = .no_error,
     other_data: []const u8 = &.{},
@@ -158,7 +161,7 @@ pub fn sign(unsigned_message: []const u8, key: Key, options: SignOptions) Error!
     var state = HmacState.init(key.algorithm, key.secret);
     defer state.deinit();
     if (options.request_mac) |prior| try updatePriorMac(&state, prior);
-    state.update(unsigned_message);
+    try updateOutgoingMessage(&state, unsigned_message, options.original_id);
     try updateVariables(&state, key.name, key.algorithm.wireName(), options.time_signed, options.fudge, options.error_code, options.other_data);
 
     var result: Mac = .{ .len = 0 };
@@ -181,7 +184,7 @@ pub fn signBuilder(builder: *builder_mod.Builder, key: Key, options: SignOptions
         .time_signed = options.time_signed,
         .fudge = options.fudge,
         .mac = mac.slice(),
-        .original_id = header.id,
+        .original_id = options.original_id orelse header.id,
         .error_code = options.error_code,
         .other_data = options.other_data,
     });
@@ -239,6 +242,15 @@ fn updatePriorMac(state: *HmacState, prior: []const u8) Error!void {
     std.mem.writeInt(u16, &len_buf, @intCast(prior.len), .big);
     state.update(&len_buf);
     state.update(prior);
+}
+
+fn updateOutgoingMessage(state: *HmacState, wire: []const u8, original_id: ?u16) Error!void {
+    if (wire.len < types.Header.wire_len) return error.InvalidMessage;
+    const header = try types.Header.parse(wire);
+    var id_buf: [2]u8 = undefined;
+    std.mem.writeInt(u16, &id_buf, original_id orelse header.id, .big);
+    state.update(&id_buf);
+    state.update(wire[2..]);
 }
 
 fn updateIncomingMessage(state: *HmacState, m: message.Message, tsig: record_mod.Record) Error!void {
@@ -318,6 +330,7 @@ pub const max_unsigned_intermediary_messages: u8 = 99;
 
 pub const ChainOptions = struct {
     time_signed: u64,
+    original_id: ?u16 = null,
     fudge: u16 = record_mod.recommended_fudge,
     mac_len: ?u8 = null,
 };
@@ -384,7 +397,7 @@ pub const Chain = struct {
 
         var candidate = self.state;
         defer candidate.deinit();
-        candidate.update(unsigned);
+        try updateOutgoingMessage(&candidate, unsigned, options.original_id);
         try updateTimers(&candidate, options.time_signed, options.fudge);
 
         var mac: Mac = .{ .len = 0 };
@@ -399,7 +412,7 @@ pub const Chain = struct {
             .time_signed = options.time_signed,
             .fudge = options.fudge,
             .mac = mac.slice(),
-            .original_id = header.id,
+            .original_id = options.original_id orelse header.id,
         });
         self.commit(mac.slice(), options.time_signed);
         return mac;
@@ -624,4 +637,27 @@ test "TSIG continuation chain covers unsigned intermediary messages and bounds t
     const empty_dns = [_]u8{ 0, 1, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
     for (0..max_unsigned_intermediary_messages) |_| try chain.absorbUnsigned(&empty_dns);
     try std.testing.expectError(error.TooManyUnsignedMessages, chain.absorbUnsigned(&empty_dns));
+}
+
+test "TSIG signing substitutes explicit Original ID into MAC input" {
+    var key_name_buf: [64]u8 = undefined;
+    const key: Key = .{
+        .name = try wireName("key.example", &key_name_buf),
+        .secret = "forwarding secret",
+    };
+    var packet: [512]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var builder = try builder_mod.Builder.init(&packet, &compression, 0x2222, .{});
+    try builder.addQuestion("example.com", .SOA, .IN);
+    var mac = try signBuilder(&builder, key, .{
+        .time_signed = 1_700_000_000,
+        .original_id = 0x1111,
+    });
+    defer mac.deinit();
+
+    const m = try message.Message.init(try builder.finish());
+    var additional = try m.records(.additional);
+    const parsed = try record_mod.parse((try additional.next()).?);
+    try std.testing.expectEqual(@as(u16, 0x1111), parsed.original_id);
+    try verify(m, parsed, key, .{ .now = 1_700_000_000 });
 }
