@@ -264,3 +264,54 @@ test "stream-correlated zero-ID transports require the caller handle" {
     try expectActionTag(.complete, done);
     try std.testing.expectEqual(CompletionKind.answer, done.complete.kind);
 }
+
+test "referral pauses for caller server selection and resumes without changing QNAME" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 3, .alias_storage_bytes = 128 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "host.child.example", .qtype = .A }, .{})).send;
+
+    var packet: [1024]u8 = undefined;
+    var compression: [48]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("host.child.example", .A, .IN);
+    try b.addNameRecord(.authority, "child.example", .NS, 3600, "ns1.child.example");
+    try b.addA(.additional, "ns1.child.example", 3600, .{ 192, 0, 2, 53 });
+    const action = try r.onResponse(first.handle, try b.finish());
+    try expectActionTag(.referral, action);
+
+    var ns = try action.referral.view.nameServers();
+    const first_ns = (try ns.next()).?;
+    var ns_name: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("ns1.child.example", try first_ns.target.writePresentation(&ns_name));
+
+    try std.testing.expectError(error.NoServers, r.followReferral(first.handle, 0, .udp));
+    const next = try r.followReferral(first.handle, 2, .udp);
+    try expectActionTag(.send, next);
+    try std.testing.expectEqual(DispatchReason.referral, next.send.reason);
+    try std.testing.expectEqual(@as(usize, 0), next.send.server_index);
+    try std.testing.expect(first.id != next.send.id);
+
+    var qname: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("host.child.example", try r.writeCurrentNamePresentation(first.handle, &qname));
+}
+
+test "stub integration can accept a referral as terminal" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 2, .alias_storage_bytes = 96 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "host.child.example", .qtype = .A }, .{})).send;
+
+    var packet: [512]u8 = undefined;
+    var compression: [24]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("host.child.example", .A, .IN);
+    try b.addNameRecord(.authority, "child.example", .NS, 300, "ns.child.example");
+    const referral = try r.onResponse(first.handle, try b.finish());
+    try expectActionTag(.referral, referral);
+    try std.testing.expectError(error.UnexpectedState, r.onTimeout(first.handle));
+
+    const done = try r.acceptReferral(first.handle);
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(CompletionKind.referral, done.complete.kind);
+}

@@ -8,6 +8,7 @@ const core = @import("../resolver.zig");
 const response_mod = @import("../resolver/response.zig");
 const alias_mod = @import("../resolver/alias.zig");
 const retry_mod = @import("../resolver/retry.zig");
+const referral_mod = @import("../resolver/referral.zig");
 
 /// Compile-time storage limits for the high-level resolver state machine.
 pub const Config = struct {
@@ -49,6 +50,7 @@ pub const DispatchReason = enum {
     truncated,
     edns_fallback,
     alias,
+    referral,
 };
 
 pub const Dispatch = struct {
@@ -73,6 +75,14 @@ pub const CompletionKind = enum {
 pub const Completion = struct {
     handle: Handle,
     kind: CompletionKind,
+    server_index: usize,
+};
+
+pub const ReferralAction = struct {
+    handle: Handle,
+    /// Zero-copy referral view borrowing the response packet passed to
+    /// `onResponse`. Consume its iterators before reusing that packet buffer.
+    view: referral_mod.Referral,
     server_index: usize,
 };
 
@@ -108,6 +118,8 @@ pub const Action = union(enum) {
     open_doq_stream: Dispatch,
     /// Perform one caller-owned HTTP request carrying application/dns-message.
     perform_doh: Dispatch,
+    /// Structurally validated delegation requiring caller server selection.
+    referral: ReferralAction,
     complete: Completion,
     fail: Failure,
 };
@@ -130,7 +142,7 @@ pub fn Resolver(comptime config: Config) type {
 
     return struct {
         const Self = @This();
-        const Phase = enum { awaiting_response, complete, failed };
+        const Phase = enum { awaiting_response, referral_pending, complete, failed };
 
         const Slot = struct {
             active: bool = false,
@@ -290,7 +302,11 @@ pub fn Resolver(comptime config: Config) type {
                 .answer => return self.complete(handle, .answer),
                 .nodata => return self.complete(handle, .nodata),
                 .nxdomain => return self.complete(handle, .nxdomain),
-                .referral => return self.complete(handle, .referral),
+                .referral => {
+                    const referral = try referral_mod.Referral.initWire(parsed, slot.currentQuestion());
+                    slot.phase = .referral_pending;
+                    return .{ .referral = .{ .handle = handle, .view = referral, .server_index = slot.server_index } };
+                },
                 else => return self.applyDecision(handle, retry_mod.plan(self.attempt(slot), .{ .response = inspected })),
             }
         }
@@ -305,6 +321,32 @@ pub fn Resolver(comptime config: Config) type {
             const slot = try self.slotFor(handle);
             if (slot.phase != .awaiting_response) return error.UnexpectedState;
             return self.applyDecision(handle, retry_mod.plan(self.attempt(slot), .transport_failure));
+        }
+
+        /// Continue the same logical QNAME through a caller-selected server
+        /// set derived from a prior `.referral` action. Addresses, NS ordering,
+        /// bailiwick policy, and connection ownership stay caller-side.
+        pub fn followReferral(self: *Self, handle: Handle, server_count: usize, transport: Transport) Error!Action {
+            var slot = try self.slotFor(handle);
+            if (slot.phase != .referral_pending) return error.UnexpectedState;
+            if (server_count == 0) return error.NoServers;
+            slot.server_count = server_count;
+            slot.server_index = 0;
+            slot.preferred_transport = transport;
+            slot.transport = transport;
+            slot.queries_sent = 1;
+            slot.edns_enabled = slot.query_options.udp_payload_size != null;
+            slot.phase = .awaiting_response;
+            try self.refreshId(slot);
+            return self.transportAction(handle.index, .referral);
+        }
+
+        /// Treat a referral as the caller's terminal semantic result (useful
+        /// for stub-style integrations that do not perform iterative descent).
+        pub fn acceptReferral(self: *Self, handle: Handle) Error!Action {
+            const slot = try self.slotFor(handle);
+            if (slot.phase != .referral_pending) return error.UnexpectedState;
+            return self.complete(handle, .referral);
         }
 
         /// Release terminal query state. Handles are generation-checked, so a
