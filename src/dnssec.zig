@@ -9,6 +9,7 @@ pub const rrset = @import("dnssec/rrset.zig");
 pub const Rrset = rrset.Rrset;
 pub const policy = @import("dnssec/policy.zig");
 pub const crypto_backend = @import("dnssec/crypto_backend.zig");
+pub const verify = @import("dnssec/verify.zig");
 
 pub const Error = name_mod.Error || error{ InvalidLength, InvalidBitmap, Truncated, InvalidDnskey };
 
