@@ -52,6 +52,12 @@ fn verifyRsa(comptime Hash: type, encoded_key: []const u8, message: []const u8, 
 
     switch (parts.modulus.len) {
         inline 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512 => |modulus_len| {
+            // The inline switch instantiates every listed modulus size for a
+            // given Hash. Avoid instantiating std's PKCS#1 encoder for sizes
+            // that the DNSSEC algorithm itself forbids; otherwise e.g. the
+            // SHA-512/512-bit branch underflows at comptime before the runtime
+            // modulus-size selection can happen.
+            if (comptime modulus_len < minimumRsaModulusLen(Hash)) return error.UnsupportedKeySize;
             rsa.PKCS1v1_5Signature.verify(
                 modulus_len,
                 signature[0..modulus_len].*,
@@ -62,6 +68,13 @@ fn verifyRsa(comptime Hash: type, encoded_key: []const u8, message: []const u8, 
         },
         else => return error.UnsupportedKeySize,
     }
+}
+
+fn minimumRsaModulusLen(comptime Hash: type) usize {
+    if (Hash == std.crypto.hash.Sha1) return 64;
+    if (Hash == std.crypto.hash.sha2.Sha256) return 64;
+    if (Hash == std.crypto.hash.sha2.Sha512) return 128;
+    @compileError("unsupported DNSSEC RSA hash");
 }
 
 const RsaParts = struct { exponent: []const u8, modulus: []const u8 };
@@ -119,4 +132,18 @@ test "builtin Ed25519 verification" {
     var corrupted = sig_bytes;
     corrupted[0] ^= 1;
     try std.testing.expectError(error.InvalidSignature, Backend.builtin.verify(15, &pk, msg, &corrupted));
+}
+
+test "runtime RSA dispatch does not instantiate forbidden key sizes" {
+    // RFC 5702 permits 512-bit RSA/SHA-256 but requires at least 1024 bits
+    // for RSA/SHA-512. Exercise runtime algorithm selection so every backend
+    // dispatch arm is compiled, including the rejected small SHA-512 cases.
+    var key = [_]u8{0} ** (1 + 3 + 64);
+    key[0] = 3;
+    key[1..4].* = .{ 0x01, 0x00, 0x01 };
+    key[4] = 0x80;
+    var signature = [_]u8{0} ** 64;
+    var algorithm: u8 = 8;
+    algorithm += 0; // keep selection runtime-visible to the function pointer.
+    try std.testing.expectError(error.InvalidPublicKey, Backend.builtin.verify(algorithm, &key, "x", &signature));
 }
