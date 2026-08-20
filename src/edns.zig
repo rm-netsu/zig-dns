@@ -6,15 +6,17 @@ const keepalive_mod = @import("edns/keepalive.zig");
 const ede_mod = @import("edns/ede.zig");
 const update_lease_mod = @import("edns/update_lease.zig");
 const zoneversion_mod = @import("edns/zoneversion.zig");
+const mqtype_mod = @import("edns/mqtype.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
 pub const ede = ede_mod;
 pub const update_lease = update_lease_mod;
 pub const zoneversion = zoneversion_mod;
+pub const mqtype = mqtype_mod;
 
-pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion };
+pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -128,6 +130,18 @@ pub fn parseZoneVersion(opt: Option, response: bool) Error!ZoneVersion {
     return zoneversion_mod.parse(opt.data, response) catch error.InvalidZoneVersion;
 }
 
+pub const MultipleQtypeList = mqtype_mod.List;
+pub const MultipleQtypeScratch = mqtype_mod.Scratch;
+pub fn parseMultipleQtypeQuery(opt: Option) Error!MultipleQtypeList {
+    if (opt.code != .MQTYPE_QUERY) return error.InvalidOption;
+    return mqtype_mod.parseQuery(opt.data) catch error.InvalidMultipleQtype;
+}
+
+pub fn parseMultipleQtypeResponse(opt: Option) Error!MultipleQtypeList {
+    if (opt.code != .MQTYPE_RESPONSE) return error.InvalidOption;
+    return mqtype_mod.parseResponse(opt.data) catch error.InvalidMultipleQtype;
+}
+
 pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
         .UPDATE_LEASE => _ = try parseUpdateLease(opt),
@@ -142,6 +156,8 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
         },
         .EDE => _ = try extendedError(opt),
         .ZONEVERSION => _ = try parseZoneVersion(opt, response),
+        .MQTYPE_QUERY => _ = try parseMultipleQtypeQuery(opt),
+        .MQTYPE_RESPONSE => _ = try parseMultipleQtypeResponse(opt),
         else => {},
     }
 }
@@ -167,6 +183,8 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
 
     var iterator = opt.iterator();
     var seen_zoneversion_query = false;
+    var seen_mqtype_query = false;
+    var seen_mqtype_response = false;
     while (try iterator.next()) |option| {
         switch (option.code) {
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
@@ -177,9 +195,77 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
                     seen_zoneversion_query = true;
                 }
             },
+            .MQTYPE_QUERY => {
+                if (opcode != .query) return error.InvalidMultipleQtype;
+                // A query may contain at most one request option. In a
+                // response this option is treated by RFC 10029 clients as
+                // an unsupported-extension signal rather than FORMERR.
+                if (!response) {
+                    if (seen_mqtype_query) return error.InvalidMultipleQtype;
+                    seen_mqtype_query = true;
+                }
+            },
+            .MQTYPE_RESPONSE => {
+                if (opcode != .query or !response) return error.InvalidMultipleQtype;
+                if (seen_mqtype_response) return error.InvalidMultipleQtype;
+                seen_mqtype_response = true;
+            },
             else => {},
         }
     }
+}
+
+/// RFC 10029 server-side extraction and validation of one MQTYPE-Query.
+/// Returns null when the query did not request multiple QTYPEs.
+pub fn multipleQtypeQuery(opt: Opt, primary: types.Type, scratch: *MultipleQtypeScratch) Error!?MultipleQtypeList {
+    var iterator = opt.iterator();
+    var query_option: ?Option = null;
+    while (try iterator.next()) |option| {
+        switch (option.code) {
+            .MQTYPE_QUERY => {
+                if (query_option != null) return error.InvalidMultipleQtype;
+                query_option = option;
+            },
+            .MQTYPE_RESPONSE => return error.InvalidMultipleQtype,
+            else => {},
+        }
+    }
+    const option = query_option orelse return null;
+    const list = try parseMultipleQtypeQuery(option);
+    list.validate(primary, scratch) catch return error.InvalidMultipleQtype;
+    return list;
+}
+
+pub const MultipleQtypeResponse = union(enum) {
+    unsupported,
+    processed: MultipleQtypeList,
+};
+
+/// RFC 10029 client-side interpretation of MQTYPE response signaling.
+///
+/// An echoed MQTYPE-Query or absent MQTYPE-Response means the extension is
+/// unsupported for this transaction. A present MQTYPE-Response is validated
+/// against the primary QTYPE with caller-owned exact duplicate scratch.
+pub fn multipleQtypeResponse(opt: ?Opt, primary: types.Type, scratch: *MultipleQtypeScratch) Error!MultipleQtypeResponse {
+    const present = opt orelse return .unsupported;
+    var iterator = present.iterator();
+    var response_option: ?Option = null;
+    var echoed_query = false;
+    while (try iterator.next()) |option| {
+        switch (option.code) {
+            .MQTYPE_QUERY => echoed_query = true,
+            .MQTYPE_RESPONSE => {
+                if (response_option != null) return error.InvalidMultipleQtype;
+                response_option = option;
+            },
+            else => {},
+        }
+    }
+    if (echoed_query) return .unsupported;
+    const option = response_option orelse return .unsupported;
+    const list = try parseMultipleQtypeResponse(option);
+    list.validate(primary, scratch) catch return error.InvalidMultipleQtype;
+    return .{ .processed = list };
 }
 
 pub const ExtendedErrorCode = ede_mod.InfoCode;
@@ -320,6 +406,27 @@ pub const OptionBuilder = struct {
         return self.addExtendedError(@intFromEnum(code), text);
     }
 
+    pub fn addMultipleQtypeQuery(self: *OptionBuilder, primary: types.Type, qtypes: []const types.Type) (error{ NoSpace, InvalidMultipleQtype })!void {
+        return self.addMultipleQtype(.MQTYPE_QUERY, primary, qtypes, false);
+    }
+
+    pub fn addMultipleQtypeResponse(self: *OptionBuilder, primary: types.Type, qtypes: []const types.Type) (error{ NoSpace, InvalidMultipleQtype })!void {
+        return self.addMultipleQtype(.MQTYPE_RESPONSE, primary, qtypes, true);
+    }
+
+    fn addMultipleQtype(self: *OptionBuilder, code: OptionCode, primary: types.Type, qtypes: []const types.Type, allow_empty: bool) (error{ NoSpace, InvalidMultipleQtype })!void {
+        mqtype_mod.validateSlice(qtypes, primary, allow_empty) catch return error.InvalidMultipleQtype;
+        const data_len = qtypes.len * 2;
+        if (self.pos + 4 + data_len > self.out.len) return error.NoSpace;
+        const start = self.pos;
+        std.mem.writeInt(u16, self.out[start..][0..2], @intFromEnum(code), .big);
+        std.mem.writeInt(u16, self.out[start + 2 ..][0..2], @intCast(data_len), .big);
+        for (qtypes, 0..) |rr_type, i| {
+            std.mem.writeInt(u16, self.out[start + 4 + i * 2 ..][0..2], @intFromEnum(rr_type), .big);
+        }
+        self.pos += 4 + data_len;
+    }
+
     pub fn addZoneVersionRequest(self: *OptionBuilder) error{NoSpace}!void {
         try self.add(.ZONEVERSION, &.{});
     }
@@ -437,4 +544,42 @@ test "Update Lease and ZONEVERSION typed builders round trip" {
 
     const version = try parseZoneVersion((try iterator.next()).?, true);
     try std.testing.expectEqual(@as(?u32, 2_023_073_001), version.response.soaSerial());
+}
+
+test "RFC 10029 MQTYPE builders and client response interpretation" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addMultipleQtypeQuery(.A, &.{ .AAAA, .HTTPS });
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    const query = try parseMultipleQtypeQuery((try it.next()).?);
+    var scratch: MultipleQtypeScratch = .{};
+    try query.validate(.A, &scratch);
+
+    var response_bytes: [64]u8 = undefined;
+    var response_builder = OptionBuilder.init(&response_bytes);
+    try response_builder.addMultipleQtypeResponse(.A, &.{ .AAAA, .HTTPS });
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = response_builder.bytes() };
+    const interpreted = try multipleQtypeResponse(opt, .A, &scratch);
+    try std.testing.expectEqual(@as(usize, 2), interpreted.processed.count());
+
+    var echoed_bytes: [64]u8 = undefined;
+    var echoed_builder = OptionBuilder.init(&echoed_bytes);
+    try echoed_builder.addMultipleQtypeQuery(.A, &.{.AAAA});
+    const echoed: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = echoed_builder.bytes() };
+    try std.testing.expectEqual(MultipleQtypeResponse.unsupported, try multipleQtypeResponse(echoed, .A, &scratch));
+}
+
+test "MQTYPE builders reject invalid and duplicate caller lists transactionally" {
+    var bytes: [32]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    const before = builder.pos;
+    try std.testing.expectError(error.InvalidMultipleQtype, builder.addMultipleQtypeQuery(.A, &.{}));
+    try std.testing.expectError(error.InvalidMultipleQtype, builder.addMultipleQtypeQuery(.A, &.{ .AAAA, .AAAA }));
+    try std.testing.expectError(error.InvalidMultipleQtype, builder.addMultipleQtypeQuery(.A, &.{.A}));
+    try std.testing.expectError(error.InvalidMultipleQtype, builder.addMultipleQtypeQuery(.ANY, &.{.A}));
+    try std.testing.expectEqual(before, builder.pos);
+
+    // RFC 10029 explicitly permits an empty MQTYPE-Response list.
+    try builder.addMultipleQtypeResponse(.A, &.{});
 }

@@ -56,6 +56,7 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             if (options.require_edns_version_zero and opt.version != 0) return error.UnsupportedEdnsVersion;
             try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
             try validateZoneVersionQuestion(m, opt);
+            try validateMultipleQtypeQuestion(m, opt);
             result.opt = opt;
         } else if (rr.rr_type == .TSIG) {
             if (result.tsig != null) return error.MultipleTsig;
@@ -105,6 +106,42 @@ fn validateZoneVersionQuestion(m: message.Message, opt: edns.Opt) Error!void {
                 seen[type_index] |= bit;
             },
         }
+    }
+}
+
+fn validateMultipleQtypeQuestion(m: message.Message, opt: edns.Opt) Error!void {
+    var iterator = opt.iterator();
+    var has_query = false;
+    var has_response = false;
+    while (try iterator.next()) |option| {
+        switch (option.code) {
+            .MQTYPE_QUERY => has_query = true,
+            .MQTYPE_RESPONSE => has_response = true,
+            else => {},
+        }
+    }
+
+    const relevant = if (m.header.flags.response) has_response else has_query;
+    if (!relevant) return;
+    if (m.header.question_count != 1) return error.InvalidMultipleQtype;
+
+    var questions = m.questions();
+    const question = (try questions.next()) orelse return error.InvalidMultipleQtype;
+    var scratch: edns.MultipleQtypeScratch = .{};
+
+    if (!m.header.flags.response) {
+        _ = try edns.multipleQtypeQuery(opt, question.qtype, &scratch);
+        return;
+    }
+
+    // An echoed MQTYPE-Query is deliberately not rejected here: RFC 10029
+    // tells clients to treat that transaction as extension-unsupported. A
+    // genuine MQTYPE-Response, if present, still has to be self-consistent.
+    var responses = opt.iterator();
+    while (try responses.next()) |option| {
+        if (option.code != .MQTYPE_RESPONSE) continue;
+        const list = try edns.parseMultipleQtypeResponse(option);
+        list.validate(question.qtype, &scratch) catch return error.InvalidMultipleQtype;
     }
 }
 
@@ -343,4 +380,69 @@ test "strict validator checks ZONEVERSION query multiplicity and response label 
     try valid.addQuestion("www.example.com", .A, .IN);
     try valid.addOpt(1232, 0, 0, .{}, valid_opts.bytes());
     _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
+}
+
+test "strict validator enforces RFC 10029 MQTYPE request semantics" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [64]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var valid_options = edns.OptionBuilder.init(&option_buf);
+    try valid_options.addMultipleQtypeQuery(.A, &.{ .AAAA, .HTTPS });
+    var valid = try builder_mod.Builder.init(&packet, &compression, 0x8401, .{});
+    try valid.addQuestion("www.example.com", .A, .IN);
+    try valid.addOpt(1232, 0, 0, .{}, valid_options.bytes());
+    _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
+
+    var duplicate_options = edns.OptionBuilder.init(&option_buf);
+    // Use the raw option writer because the typed builder correctly rejects
+    // duplicate lists before wire mutation.
+    try duplicate_options.add(.MQTYPE_QUERY, &.{ 0x00, 0x1c, 0x00, 0x1c });
+    var duplicate = try builder_mod.Builder.init(&packet, &compression, 0x8402, .{});
+    try duplicate.addQuestion("www.example.com", .A, .IN);
+    try duplicate.addOpt(1232, 0, 0, .{}, duplicate_options.bytes());
+    try std.testing.expectError(error.InvalidMultipleQtype, messageStrict(try message.Message.init(try duplicate.finish()), .{}));
+
+    var primary_duplicate_options = edns.OptionBuilder.init(&option_buf);
+    try primary_duplicate_options.add(.MQTYPE_QUERY, &.{ 0x00, 0x01 });
+    var primary_duplicate = try builder_mod.Builder.init(&packet, &compression, 0x8403, .{});
+    try primary_duplicate.addQuestion("www.example.com", .A, .IN);
+    try primary_duplicate.addOpt(1232, 0, 0, .{}, primary_duplicate_options.bytes());
+    try std.testing.expectError(error.InvalidMultipleQtype, messageStrict(try message.Message.init(try primary_duplicate.finish()), .{}));
+
+    var meta_primary_options = edns.OptionBuilder.init(&option_buf);
+    try meta_primary_options.add(.MQTYPE_QUERY, &.{ 0x00, 0x01 });
+    var meta_primary = try builder_mod.Builder.init(&packet, &compression, 0x8404, .{});
+    try meta_primary.addQuestion("www.example.com", .ANY, .IN);
+    try meta_primary.addOpt(1232, 0, 0, .{}, meta_primary_options.bytes());
+    try std.testing.expectError(error.InvalidMultipleQtype, messageStrict(try message.Message.init(try meta_primary.finish()), .{}));
+}
+
+test "strict validator enforces RFC 10029 response semantics without rejecting echoed query" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [64]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var response_options = edns.OptionBuilder.init(&option_buf);
+    try response_options.addMultipleQtypeResponse(.A, &.{ .AAAA, .HTTPS });
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8501, .{ .response = true });
+    try response.addQuestion("www.example.com", .A, .IN);
+    try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
+    _ = try messageStrict(try message.Message.init(try response.finish()), .{});
+
+    var echoed_options = edns.OptionBuilder.init(&option_buf);
+    try echoed_options.addMultipleQtypeQuery(.A, &.{.AAAA});
+    var echoed = try builder_mod.Builder.init(&packet, &compression, 0x8502, .{ .response = true });
+    try echoed.addQuestion("www.example.com", .A, .IN);
+    try echoed.addOpt(1232, 0, 0, .{}, echoed_options.bytes());
+    _ = try messageStrict(try message.Message.init(try echoed.finish()), .{});
+
+    var duplicate_response_options = edns.OptionBuilder.init(&option_buf);
+    try duplicate_response_options.add(.MQTYPE_RESPONSE, &.{ 0x00, 0x1c, 0x00, 0x1c });
+    var duplicate_response = try builder_mod.Builder.init(&packet, &compression, 0x8503, .{ .response = true });
+    try duplicate_response.addQuestion("www.example.com", .A, .IN);
+    try duplicate_response.addOpt(1232, 0, 0, .{}, duplicate_response_options.bytes());
+    try std.testing.expectError(error.InvalidMultipleQtype, messageStrict(try message.Message.init(try duplicate_response.finish()), .{}));
 }
