@@ -447,3 +447,37 @@ test "strict validator enforces EDNS EXPIRE direction and QUERY opcode" {
     try wrong_direction.addOpt(1232, 0, 0, .{}, response_options.bytes());
     try std.testing.expectError(error.InvalidExpire, messageStrict(try message.Message.init(try wrong_direction.finish()), .{}));
 }
+
+test "strict validator enforces RFC 9567 Report-Channel response semantics" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [96]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var valid_options = edns.OptionBuilder.init(&option_buf);
+    try valid_options.addReportChannelPresentation("agent.example.");
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8701, .{ .response = true, .authoritative = true });
+    try response.addQuestion("www.example", .A, .IN);
+    try response.addOpt(1232, 0, 0, .{}, valid_options.bytes());
+    _ = try messageStrict(try message.Message.init(try response.finish()), .{});
+
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8702, .{});
+    try query.addQuestion("www.example", .A, .IN);
+    try query.addOpt(1232, 0, 0, .{}, valid_options.bytes());
+    try std.testing.expectError(error.InvalidReportChannel, messageStrict(try message.Message.init(try query.finish()), .{}));
+
+    var duplicate_options = edns.OptionBuilder.init(&option_buf);
+    try duplicate_options.addReportChannelPresentation("one.example.");
+    try duplicate_options.addReportChannelPresentation("two.example.");
+    var duplicate = try builder_mod.Builder.init(&packet, &compression, 0x8703, .{ .response = true, .authoritative = true });
+    try duplicate.addQuestion("www.example", .A, .IN);
+    try duplicate.addOpt(1232, 0, 0, .{}, duplicate_options.bytes());
+    try std.testing.expectError(error.InvalidReportChannel, messageStrict(try message.Message.init(try duplicate.finish()), .{}));
+
+    var root_options = edns.OptionBuilder.init(&option_buf);
+    try root_options.add(.REPORT_CHANNEL, &.{0});
+    var root = try builder_mod.Builder.init(&packet, &compression, 0x8704, .{ .response = true, .authoritative = true });
+    try root.addQuestion("www.example", .A, .IN);
+    try root.addOpt(1232, 0, 0, .{}, root_options.bytes());
+    try std.testing.expectError(error.InvalidReportChannel, messageStrict(try message.Message.init(try root.finish()), .{}));
+}

@@ -1,6 +1,7 @@
 const std = @import("std");
 const message = @import("message.zig");
 const types = @import("types.zig");
+const name_mod = @import("name.zig");
 const cookie_mod = @import("edns/cookie.zig");
 const keepalive_mod = @import("edns/keepalive.zig");
 const ede_mod = @import("edns/ede.zig");
@@ -8,6 +9,7 @@ const update_lease_mod = @import("edns/update_lease.zig");
 const zoneversion_mod = @import("edns/zoneversion.zig");
 const mqtype_mod = @import("edns/mqtype.zig");
 const expire_mod = @import("edns/expire.zig");
+const report_channel_mod = @import("edns/report_channel.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -16,9 +18,10 @@ pub const update_lease = update_lease_mod;
 pub const zoneversion = zoneversion_mod;
 pub const mqtype = mqtype_mod;
 pub const expire = expire_mod;
+pub const report_channel = report_channel_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -150,6 +153,27 @@ pub fn parseMultipleQtypeResponse(opt: Option) Error!MultipleQtypeList {
     return mqtype_mod.parseResponse(opt.data) catch error.InvalidMultipleQtype;
 }
 
+pub const ReportChannel = report_channel_mod.ReportChannel;
+pub fn parseReportChannel(opt: Option) Error!ReportChannel {
+    if (opt.code != .REPORT_CHANNEL) return error.InvalidOption;
+    return report_channel_mod.parse(opt.data) catch error.InvalidReportChannel;
+}
+
+/// Returns the RFC 9567 agent domain when a response advertises one.
+/// Duplicate options are rejected even when the caller did not run strict
+/// whole-message validation first.
+pub fn reportChannel(opt: ?Opt) Error!?ReportChannel {
+    const present = opt orelse return null;
+    var iterator = present.iterator();
+    var value: ?ReportChannel = null;
+    while (try iterator.next()) |option| {
+        if (option.code != .REPORT_CHANNEL) continue;
+        if (value != null) return error.InvalidReportChannel;
+        value = try parseReportChannel(option);
+    }
+    return value;
+}
+
 pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
         .UPDATE_LEASE => _ = try parseUpdateLease(opt),
@@ -170,6 +194,10 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
             }
         },
         .EDE => _ = try extendedError(opt),
+        .REPORT_CHANNEL => {
+            if (!response) return error.InvalidReportChannel;
+            _ = try parseReportChannel(opt);
+        },
         .ZONEVERSION => _ = try parseZoneVersion(opt, response),
         .MQTYPE_QUERY => _ = try parseMultipleQtypeQuery(opt),
         .MQTYPE_RESPONSE => _ = try parseMultipleQtypeResponse(opt),
@@ -193,6 +221,7 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
 
 pub const MessageOptionSummary = struct {
     has_zoneversion: bool = false,
+    report_channel: ?Option = null,
     mqtype_query: ?Option = null,
     mqtype_response: ?Option = null,
 };
@@ -218,6 +247,10 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
         switch (option.code) {
             .EXPIRE => if (opcode != .query) return error.InvalidExpire,
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
+            .REPORT_CHANNEL => {
+                if (summary.report_channel != null) return error.InvalidReportChannel;
+                summary.report_channel = option;
+            },
             .ZONEVERSION => {
                 if (opcode != .query) return error.InvalidZoneVersion;
                 if (!response and summary.has_zoneversion) return error.InvalidZoneVersion;
@@ -467,6 +500,18 @@ pub const OptionBuilder = struct {
         self.pos += 4 + data_len;
     }
 
+    pub fn addReportChannel(self: *OptionBuilder, agent_domain: name_mod.Uncompressed) error{ NoSpace, InvalidReportChannel }!void {
+        report_channel_mod.validateAgentDomain(agent_domain) catch return error.InvalidReportChannel;
+        try self.add(.REPORT_CHANNEL, agent_domain.bytes);
+    }
+
+    pub fn addReportChannelPresentation(self: *OptionBuilder, agent_domain: []const u8) error{ NoSpace, InvalidReportChannel }!void {
+        var wire: [name_mod.Name.max_wire_len]u8 = undefined;
+        const encoded = name_mod.writePresentationWire(agent_domain, &wire) catch return error.InvalidReportChannel;
+        const uncompressed = name_mod.Uncompressed.init(encoded) catch return error.InvalidReportChannel;
+        try self.addReportChannel(uncompressed);
+    }
+
     pub fn addZoneVersionRequest(self: *OptionBuilder) error{NoSpace}!void {
         try self.add(.ZONEVERSION, &.{});
     }
@@ -634,4 +679,29 @@ test "EDNS EXPIRE typed builders preserve query response direction" {
     try std.testing.expectEqual(Expire.request, try parseExpire((try it.next()).?));
     const response = try parseExpire((try it.next()).?);
     try std.testing.expectEqual(@as(u32, 86_400), response.remaining_seconds);
+}
+
+test "RFC 9567 Report-Channel typed builder round trips" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addReportChannelPresentation("a01.agent.example.");
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    const parsed = try parseReportChannel((try it.next()).?);
+    const expected = [_]u8{ 3, 'a', '0', '1', 5, 'a', 'g', 'e', 'n', 't', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0 };
+    try std.testing.expectEqualSlices(u8, &expected, parsed.agent_domain.bytes);
+    try std.testing.expect((try it.next()) == null);
+
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    const discovered = (try reportChannel(opt)).?;
+    try std.testing.expectEqualSlices(u8, &expected, discovered.agent_domain.bytes);
+}
+
+test "RFC 9567 Report-Channel builder rejects root transactionally" {
+    var bytes: [16]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    const before = builder.pos;
+    const root = try name_mod.Uncompressed.init(&.{0});
+    try std.testing.expectError(error.InvalidReportChannel, builder.addReportChannel(root));
+    try std.testing.expectEqual(before, builder.pos);
 }
