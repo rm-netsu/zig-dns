@@ -113,7 +113,7 @@ test "signature time uses RFC 1982 arithmetic across wrap" {
     try std.testing.expectError(error.AmbiguousSignatureTime, validateSignatureTime(0, 0x8000_0000, 0));
 }
 
-test "verify Ed25519 RRSIG with caller-owned workspace" {
+test "verify wildcard Ed25519 RRSIG with caller-owned workspace" {
     const builder = @import("../builder.zig");
     const Ed25519 = std.crypto.sign.Ed25519;
     const key_pair = try Ed25519.KeyPair.generateDeterministic([_]u8{0x31} ** Ed25519.KeyPair.seed_length);
@@ -128,7 +128,7 @@ test "verify Ed25519 RRSIG with caller-owned workspace" {
     var unsigned_packet: [512]u8 = undefined;
     var unsigned_compression: [16]builder.CompressionEntry = undefined;
     var ub = try builder.Builder.init(&unsigned_packet, &unsigned_compression, 1, .{ .response = true });
-    try ub.addA(.answer, "www.example.com", 300, .{ 192, 0, 2, 1 });
+    try ub.addA(.answer, "a.example.com", 300, .{ 192, 0, 2, 1 });
     const unsigned_bytes = try ub.finish();
     const unsigned_message = try message.Message.init(unsigned_bytes);
     var uit = try unsigned_message.records(.answer);
@@ -140,7 +140,7 @@ test "verify Ed25519 RRSIG with caller-owned workspace" {
     var sig_meta: rdata.Rrsig = .{
         .type_covered = @intFromEnum(types.Type.A),
         .algorithm = 15,
-        .labels = 3,
+        .labels = 2,
         .original_ttl = 300,
         .expiration = 110,
         .inception = 90,
@@ -161,10 +161,10 @@ test "verify Ed25519 RRSIG with caller-owned workspace" {
     var packet: [1024]u8 = undefined;
     var compression: [32]builder.CompressionEntry = undefined;
     var b = try builder.Builder.init(&packet, &compression, 1, .{ .response = true });
-    try b.addA(.answer, "www.example.com", 300, .{ 192, 0, 2, 1 });
+    try b.addA(.answer, "a.example.com", 300, .{ 192, 0, 2, 1 });
     var signer_buf: [name_mod.Name.max_wire_len]u8 = undefined;
     const signer_uncompressed = try name_mod.Uncompressed.init(try signer_name.writeWire(&signer_buf));
-    var rw = try b.beginRecord(.answer, "www.example.com", .RRSIG, .IN, 300);
+    var rw = try b.beginRecord(.answer, "a.example.com", .RRSIG, .IN, 300);
     try rw.writeU16(sig_meta.type_covered);
     try rw.writeByte(sig_meta.algorithm);
     try rw.writeByte(sig_meta.labels);
