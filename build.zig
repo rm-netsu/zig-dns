@@ -85,4 +85,18 @@ pub fn build(b: *std.Build) void {
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
     interop_dnssec.dependOn(&run_dnssec_interop.step);
+
+    const tsig_fixture_mod = b.createModule(.{
+        .root_source_file = b.path("interop/tsig_fixture.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const tsig_fixture = b.addExecutable(.{ .name = "dns-tsig-interop-fixture", .root_module = tsig_fixture_mod });
+    check.dependOn(&tsig_fixture.step);
+
+    const interop_tsig = b.step("interop-tsig", "Validate TSIG messages with dnspython");
+    const run_tsig_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/tsig_vectors.py") });
+    run_tsig_interop.addArtifactArg(tsig_fixture);
+    interop_tsig.dependOn(&run_tsig_interop.step);
 }
