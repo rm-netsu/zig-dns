@@ -47,6 +47,18 @@ pub fn build(b: *std.Build) void {
     const run_resolver = b.addRunArtifact(resolver_example);
     resolver_step.dependOn(&run_resolver.step);
 
+    const high_level_resolver_mod = b.createModule(.{
+        .root_source_file = b.path("examples/high_level_resolver.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const high_level_resolver_example = b.addExecutable(.{ .name = "dns-high-level-resolver-example", .root_module = high_level_resolver_mod });
+    check.dependOn(&high_level_resolver_example.step);
+
+    const high_level_resolver_step = b.step("example-high-level-resolver", "Run the bounded high-level resolver example");
+    high_level_resolver_step.dependOn(&b.addRunArtifact(high_level_resolver_example).step);
+
     const dnssec_mod = b.createModule(.{
         .root_source_file = b.path("examples/dnssec.zig"),
         .target = target,
