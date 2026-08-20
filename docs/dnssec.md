@@ -77,9 +77,9 @@ try dns.dnssec.verify.verifyRrset(
 
 The verifier checks type covered, owner/class, signer, DNSKEY protocol, Zone Key flag, algorithm, key tag, wildcard label constraints, and the RFC 1982 interpretation of the 32-bit inception/expiration fields before invoking cryptography.
 
-The built-in backend currently supports DNSSEC algorithms 5, 7, 8, 10, 13, 14, and 15. Algorithm 16 (Ed448) is accepted by the current default registry policy but is not implemented by Zig 0.16.0's standard crypto library; applications may inject a backend that supports it. This is intentionally distinct from policy acceptance.
+The built-in backend currently supports DNSSEC algorithms 5, 7, 8, 10, 13, 14, and 15. This covers every algorithm marked **MUST** for validation implementation in the 2026-01-13 IANA registry snapshot plus ECDSA P-384 and Ed25519. Algorithm 16 (Ed448) is **RECOMMENDED** for validation implementation but Zig 0.16.0's standard crypto library does not implement Ed448; applications may inject a backend that supports it. Algorithms accepted only as `MAY` by policy (including 17, 18, 23, 253, and 254 in this snapshot) are likewise not claimed as built-in crypto support. Unsupported algorithms can never become `secure` accidentally.
 
-`dns.dnssec.policy.AlgorithmPolicy` is a runtime-injectable recommendation policy. The bundled `registry_2026_01_13` value is date-stamped so a future IANA policy change cannot silently masquerade as timeless protocol semantics.
+`dns.dnssec.policy.AlgorithmPolicy` is a runtime-injectable recommendation policy. The bundled `registry_2026_01_13` value follows the IANA **Use for DNSSEC Validation** column and is date-stamped so a future registry change cannot silently masquerade as timeless protocol semantics. Crypto implementation support remains a separate backend capability.
 
 ## DS and DNSKEY
 

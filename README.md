@@ -191,7 +191,8 @@ These can be layered above the wire/core APIs without forcing their resource mod
 
 - [`docs/architecture.md`](docs/architecture.md) — ownership, parsing, encoding, and layering.
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
-- [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC/SVCB validation boundary and canonical names.
+- [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
+- [`docs/performance.md`](docs/performance.md) — release A/B methodology and DNSSEC benchmark baseline.
 - [`FUZZING.md`](FUZZING.md) — deterministic property corpus and suggested fuzz entry points.
 
 ## Development
@@ -202,6 +203,9 @@ zig build check
 zig build example-inspect
 zig build example-resolver
 zig build example-dnssec
+zig build interop-dnssec     # optional: requires dnspython + cryptography
+zig build bench-core -Doptimize=ReleaseFast
+zig build bench-dnssec -Doptimize=ReleaseFast
 ```
 
 The project targets Zig 0.16.0.

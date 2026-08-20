@@ -9,6 +9,9 @@
 - Add NSEC and NSEC3 authenticated-denial primitives, including closest-encloser, wildcard, NODATA, NXDOMAIN, Opt-Out, and explicit NSEC3 iteration limits.
 - Add trust-anchor, DNSKEY-set, delegation, and security-status primitives for composing a chain of trust without transport ownership.
 - Add deterministic canonicalization/RRset-order properties and a caller-owned DNSSEC composition example.
+- Add independent RFC RRSIG vectors for RSA/SHA-256, RSA/SHA-512, ECDSA P-256/P-384, and Ed25519, including wildcard and corrupted-signature coverage.
+- Add an optional dnspython interoperability gate and ReleaseFast core/DNSSEC benchmark harnesses.
+- Synchronize the default validation policy with the IANA 2026-01-13 registry snapshot and make runtime RSA key-size dispatch safe.
 
 ## 0.1.0
 
