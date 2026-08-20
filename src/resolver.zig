@@ -4,6 +4,7 @@ const builder = @import("builder.zig");
 const message = @import("message.zig");
 const client = @import("client.zig");
 const edns = @import("edns.zig");
+const name_mod = @import("name.zig");
 
 pub const response = @import("resolver/response.zig");
 pub const alias = @import("resolver/alias.zig");
@@ -21,11 +22,24 @@ pub const QueryOptions = struct {
 pub fn buildQuery(out: []u8, compression: []builder.CompressionEntry, id: u16, q: client.QuestionKey, options: QueryOptions, edns_options: []const u8) builder.Error![]const u8 {
     var b = try builder.Builder.init(out, compression, id, .{ .recursion_desired = options.recursion_desired, .checking_disabled = options.checking_disabled });
     try b.addQuestion(q.name, q.qtype, q.qclass);
+    try addQueryOpt(&b, options, edns_options);
+    return b.finish();
+}
+
+/// Wire-name form of `buildQuery`, preserving arbitrary label octets without
+/// presentation-string conversion.
+pub fn buildQueryWire(out: []u8, compression: []builder.CompressionEntry, id: u16, q: client.WireQuestionKey, options: QueryOptions, edns_options: []const u8) builder.Error![]const u8 {
+    var b = try builder.Builder.init(out, compression, id, .{ .recursion_desired = options.recursion_desired, .checking_disabled = options.checking_disabled });
+    try b.addQuestionWire(q.name, q.qtype, q.qclass);
+    try addQueryOpt(&b, options, edns_options);
+    return b.finish();
+}
+
+fn addQueryOpt(b: *builder.Builder, options: QueryOptions, edns_options: []const u8) builder.Error!void {
     if (options.udp_payload_size) |size| try b.addOpt(size, 0, 0, .{
         .dnssec_ok = options.dnssec_ok,
         .compact_answers_ok = options.compact_answers_ok,
     }, edns_options);
-    return b.finish();
 }
 
 pub const ResponseDisposition = enum { accept, retry_tcp };
@@ -87,6 +101,20 @@ pub fn FixedTransactions(comptime capacity: usize) type {
             return n;
         }
     };
+}
+
+test "wire query builder preserves arbitrary label octets" {
+    const wire_name = [_]u8{ 3, 'a', 0, 'b', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 0 };
+    const qname = try name_mod.Uncompressed.init(&wire_name);
+    var packet: [256]u8 = undefined;
+    var compression: [8]builder.CompressionEntry = undefined;
+    const bytes = try buildQueryWire(&packet, &compression, 0x42, .{ .name = qname, .qtype = .AAAA }, .{ .udp_payload_size = 1232 }, &.{});
+    const m = try message.Message.init(bytes);
+    var questions = m.questions();
+    const q = (try questions.next()).?;
+    const expected = try name_mod.Name.init(qname.bytes, 0);
+    try std.testing.expect(try q.name.eqlIgnoreCase(expected));
+    try std.testing.expectEqual(types.Type.AAAA, q.qtype);
 }
 
 test "fixed transactions match out of order responses" {
