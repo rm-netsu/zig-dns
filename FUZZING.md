@@ -18,7 +18,8 @@ Current replay coverage includes:
 12. authoritative query/EDNS/output-cap replay with response strict-validation and deterministic wire mutation;
 13. operational EDNS replay over arbitrary COOKIE/KEEPALIVE/NSID/PADDING/EDE/EXPIRE/REPORT-CHANNEL/UPDATE-LEASE/ZONEVERSION/MQTYPE/DAU/DHU/N3U/KEY-TAG/CHAIN payloads plus generated typed round trips and block-padding boundary properties;
 14. RESINFO constituent-string/key parsing over arbitrary payloads, including known-value EDE-range and HTTPS-URI helpers;
-15. bounded EDNS and RDATA parsing tests in their owning modules.
+15. arbitrary DSYNC RDATA plus generated builder round trips, bounded discovery-name transformations, and generalized NOTIFY envelope checks;
+16. bounded EDNS and RDATA parsing tests in their owning modules.
 
 Run it with:
 
@@ -32,6 +33,7 @@ For an external fuzzing harness, the best stateless entry points are:
 - `Name.init(packet, offset)` followed by `writeWire` into a 255-byte buffer;
 - `edns.Opt.fromRecord` + option iteration, including typed COOKIE/KEEPALIVE/NSID/PADDING/EDE/EXPIRE/REPORT-CHANNEL/UPDATE-LEASE/ZONEVERSION/MQTYPE/DAU/DHU/N3U/KEY-TAG/CHAIN parsers;
 - `resinfo.Iterator`, `extendedErrors`, and `infoUrl` over arbitrary RESINFO-style constituent strings;
+- `dsync.parseRdata`, `initialLookupName`, and `nextLookupAfterNegative` with caller-owned output storage;
 - `svcb.validateRecord`;
 - `dnssec.TypeBitmapIterator.next`;
 - `dnssec.CanonicalWriter.writeRecord`;

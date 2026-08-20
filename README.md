@@ -21,7 +21,8 @@ Version 0.7.0 is the current authoritative-composition release. The public API i
 - caller-injected DNSSEC algorithm policy, crypto backend, time, and bounded scratch storage;
 - RFC 8945 TSIG HMAC authentication with bounded multi-message chaining and explicit truncation policy;
 - RFC 2136 Dynamic UPDATE composition/prescan with semantic prerequisite and add/delete APIs;
-- RFC 1996 SOA NOTIFY composition, validation, and transport-neutral response matching;
+- RFC 1996/RFC 9859 SOA/CDS/CSYNC NOTIFY composition, validation, and transport-neutral response matching;
+- RFC 9859 DSYNC endpoint records and bounded `_dsync` discovery-name transformations;
 - SVCB/HTTPS validation, including uncompressed targets and ordered SvcParams;
 - RFC 9606 RESINFO typed parsing/building with borrowed resolver-information attributes;
 - UDP truncation policy helper and incremental DNS-over-TCP decoder;
@@ -182,7 +183,7 @@ Version 0.7.0 includes:
 - a bounded high-level resolver state machine that returns transport/cache/referral/completion actions while leaving I/O, clocks, server addresses, and runtime ownership to the caller;
 - authoritative QUERY response composition over caller-defined zone stores, including wildcard/delegation/glue/negative/DNSSEC semantics and caller-reserved TSIG tails;
 - TSIG request/response authentication and transfer-ready continuation MAC state;
-- Dynamic UPDATE composition/validation and SOA NOTIFY protocol primitives.
+- Dynamic UPDATE composition/validation and generalized NOTIFY/DSYNC protocol primitives.
 - allocation-free AXFR/IXFR receivers with semantic events, AXFR fallback, RFC 1982 serial handling, and bounded persistent state;
 - TCP/DoT/DoQ zone-transfer composition, including multi-response DoQ stream framing.
 
@@ -204,13 +205,14 @@ These can be layered above the wire/core APIs without forcing their resource mod
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
 - [`docs/edns.md`](docs/edns.md) — operational EDNS options, strict semantics, Cookie rollover, Padding policy, Report-Channel, and NSID behavior.
 - [`docs/resinfo.md`](docs/resinfo.md) — RFC 9606 resolver-information records, known-key helpers, and client-policy boundaries.
+- [`docs/dsync.md`](docs/dsync.md) — RFC 9859 DSYNC records, endpoint-discovery names, and generalized CDS/CSYNC NOTIFY.
 - [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/resolver.md`](docs/resolver.md) — response semantics, aliases, referrals/glue, bounded cache primitives, and retry planning.
 - [`docs/high_level_resolver.md`](docs/high_level_resolver.md) — bounded query lifecycle, transport actions, cache/DNSSEC hooks, and referral composition.
 - [`docs/authoritative.md`](docs/authoritative.md) — caller-owned authoritative response composition, DNSSEC proof hooks, truncation, and TSIG reservation.
 - [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
 - [`docs/tsig.md`](docs/tsig.md) — RFC 8945 signing, verification, error semantics, and multi-message chaining.
-- [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and NOTIFY composition/validation.
+- [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and RFC 1996/RFC 9859 NOTIFY composition/validation.
 - [`docs/performance.md`](docs/performance.md) — release A/B methodology and DNSSEC benchmark baseline.
 - [`FUZZING.md`](FUZZING.md) — deterministic property corpus and suggested fuzz entry points.
 

@@ -78,9 +78,9 @@ const wire = try update.finish();
 
 See `examples/update.zig`. `zig build interop-update` validates both the RFC 2136 semantics and the TSIG of a Zig-generated signed update using dnspython.
 
-## RFC 1996 NOTIFY
+## RFC 1996 / RFC 9859 NOTIFY
 
-The canonical SOA-change request is built with:
+The canonical SOA-change request is built with a typed event:
 
 ```zig
 var builder = try dns.notify.requestBuilder(
@@ -89,10 +89,19 @@ var builder = try dns.notify.requestBuilder(
     id,
     "example.com",
     .IN,
+    .soa_change,
 );
 ```
 
-The returned Builder is intentionally not hidden, so callers can append an optional Answer hint or TSIG. `validateRequest` accepts the RFC 1996 `QDCOUNT > 0` envelope and requires supported SOA notification events; it does not invent transport or master-selection policy.
+RFC 9859 generalized delegation notifications use the same builder with
+`.cds` or `.csync`, which encode QTYPE=CDS and QTYPE=CSYNC respectively. The
+returned Builder is intentionally not hidden, so callers can append an
+optional Answer hint, Report-Channel OPT, or TSIG.
+
+`validateRequest` accepts the RFC 1996 `QDCOUNT > 0` SOA envelope. For
+generalized notifications it rejects mixed event types and payloads spanning
+different child zones. It does not invent transport/source authorization or
+delegation-maintenance policy.
 
 A successful reply can be produced from the validated request:
 
@@ -107,3 +116,6 @@ var response = try dns.notify.responseBuilder(
 `dns.notify.validateSuccessResponse` validates the canonical `NOERROR` response envelope from RFC 1996 section 4.7. Error responses such as `NOTIMP` remain ordinary `dns.Message` values so callers can classify their RCODE without mistaking them for successful acknowledgements.
 
 `dns.notify.matches` compares DNS ID and all question tuples case-insensitively. UDP source address and source port matching remain the transport caller's responsibility.
+
+DSYNC endpoint discovery and the RFC 9859 bounded `_dsync` lookup-name
+transforms are documented in [`dsync.md`](dsync.md).
