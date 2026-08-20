@@ -80,13 +80,16 @@ test "operational EDNS parsers survive arbitrary payloads" {
         for (payload[0..len]) |*b| b.* = rng.byte();
         const data = payload[0..len];
 
-        switch (rng.next() % 6) {
+        switch (rng.next() % 9) {
             0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
             1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
             2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
             3 => _ = edns.parseUpdateLease(.{ .code = .UPDATE_LEASE, .data = data }) catch continue,
             4 => _ = edns.parseZoneVersion(.{ .code = .ZONEVERSION, .data = data }, false) catch continue,
-            else => _ = edns.parseZoneVersion(.{ .code = .ZONEVERSION, .data = data }, true) catch continue,
+            5 => _ = edns.parseZoneVersion(.{ .code = .ZONEVERSION, .data = data }, true) catch continue,
+            6 => _ = edns.parseExpire(.{ .code = .EXPIRE, .data = data }) catch continue,
+            7 => _ = edns.parseMultipleQtypeQuery(.{ .code = .MQTYPE_QUERY, .data = data }) catch continue,
+            else => _ = edns.parseMultipleQtypeResponse(.{ .code = .MQTYPE_RESPONSE, .data = data }) catch continue,
         }
     }
 }
@@ -97,7 +100,7 @@ test "operational EDNS builders round trip deterministic generated values" {
 
     for (0..512) |_| {
         var options = edns.OptionBuilder.init(&option_bytes);
-        switch (rng.next() % 5) {
+        switch (rng.next() % 7) {
             0 => {
                 var client: [edns.cookie.client_length]u8 = undefined;
                 for (&client) |*b| b.* = rng.byte();
@@ -139,7 +142,7 @@ test "operational EDNS builders round trip deterministic generated values" {
                 try std.testing.expectEqual(value.lease, parsed.lease);
                 try std.testing.expectEqual(value.key_lease, parsed.key_lease);
             },
-            else => {
+            4 => {
                 const labels: u8 = @intCast(rng.next() % 16);
                 const serial: u32 = @truncate(rng.next());
                 try options.addZoneVersionSoaSerial(labels, serial);
@@ -147,6 +150,26 @@ test "operational EDNS builders round trip deterministic generated values" {
                 const parsed = try edns.parseZoneVersion((try it.next()).?, true);
                 try std.testing.expectEqual(labels, parsed.response.label_count);
                 try std.testing.expectEqual(@as(?u32, serial), parsed.response.soaSerial());
+            },
+            5 => {
+                const remaining: u32 = @truncate(rng.next());
+                try options.addExpireResponse(remaining);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseExpire((try it.next()).?);
+                try std.testing.expectEqual(remaining, parsed.remaining_seconds);
+            },
+            else => {
+                const choices = [_]types.Type{ .AAAA, .HTTPS, .TXT, .CAA };
+                const first = choices[@intCast(rng.next() % choices.len)];
+                var second = choices[@intCast(rng.next() % choices.len)];
+                if (second == first) second = choices[(@intFromEnum(first) + 1) % choices.len];
+                const requested = [_]types.Type{ first, second };
+                try options.addMultipleQtypeQuery(.A, &requested);
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseMultipleQtypeQuery((try it.next()).?);
+                var scratch: edns.MultipleQtypeScratch = .{};
+                try parsed.validate(.A, &scratch);
+                try std.testing.expectEqual(@as(usize, 2), parsed.count());
             },
         }
     }
