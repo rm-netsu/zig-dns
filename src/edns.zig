@@ -2,12 +2,14 @@ const std = @import("std");
 const message = @import("message.zig");
 const cookie_mod = @import("edns/cookie.zig");
 const keepalive_mod = @import("edns/keepalive.zig");
+const ede_mod = @import("edns/ede.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
+pub const ede = ede_mod;
 
 pub const OptionCode = enum(u16) { NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -139,10 +141,26 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
     }
 }
 
-pub const ExtendedError = struct { info_code: u16, extra_text: []const u8 };
+pub const ExtendedErrorCode = ede_mod.InfoCode;
+pub const ExtendedError = ede_mod.ExtendedError;
 pub fn extendedError(opt: Option) Error!ExtendedError {
-    if (opt.code != .EDE or opt.data.len < 2) return error.InvalidOption;
-    return .{ .info_code = std.mem.readInt(u16, opt.data[0..2], .big), .extra_text = opt.data[2..] };
+    if (opt.code != .EDE) return error.InvalidOption;
+    return ede_mod.parse(opt.data) catch error.InvalidExtendedError;
+}
+
+pub const ExtendedErrorIterator = struct {
+    inner: Iterator,
+
+    pub fn next(self: *ExtendedErrorIterator) Error!?ExtendedError {
+        while (try self.inner.next()) |option| {
+            if (option.code == .EDE) return try extendedError(option);
+        }
+        return null;
+    }
+};
+
+pub fn extendedErrors(opt: Opt) ExtendedErrorIterator {
+    return .{ .inner = opt.iterator() };
 }
 
 pub const ClientSubnet = struct { family: u16, source_prefix: u8, scope_prefix: u8, address: []const u8 };
@@ -234,7 +252,8 @@ pub const OptionBuilder = struct {
         self.pos += 8 + address_len;
     }
 
-    pub fn addExtendedError(self: *OptionBuilder, info_code: u16, text: []const u8) error{NoSpace}!void {
+    pub fn addExtendedError(self: *OptionBuilder, info_code: u16, text: []const u8) error{ NoSpace, InvalidExtendedError }!void {
+        if (!std.unicode.utf8ValidateSlice(text)) return error.InvalidExtendedError;
         if (self.pos + 6 + text.len > self.out.len or text.len > std.math.maxInt(u16) - 2) return error.NoSpace;
         var tmp: [2]u8 = undefined;
         std.mem.writeInt(u16, &tmp, info_code, .big);
@@ -248,6 +267,10 @@ pub const OptionBuilder = struct {
             self.pos += text.len;
             std.mem.writeInt(u16, self.out[start + 2 ..][0..2], old_len + @as(u16, @intCast(text.len)), .big);
         }
+    }
+
+    pub fn addExtendedErrorCode(self: *OptionBuilder, code: ExtendedErrorCode, text: []const u8) error{ NoSpace, InvalidExtendedError }!void {
+        return self.addExtendedError(@intFromEnum(code), text);
     }
 
     pub fn addPadding(self: *OptionBuilder, len: usize) error{NoSpace}!void {
@@ -321,4 +344,25 @@ test "client cookie response validation uses first COOKIE only" {
     try std.testing.expectError(error.IncorrectClientCookie, validateCookieResponse(opt, wrong, true));
     try std.testing.expectError(error.MissingCookie, validateCookieResponse(null, client, true));
     try std.testing.expectEqual(@as(?[]const u8, null), try validateCookieResponse(null, client, false));
+}
+
+test "EDE typed builder and filtered iterator preserve multiple diagnostics" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addExtendedErrorCode(.dnssec_bogus, "signature failed");
+    try builder.add(.PADDING, &.{ 0, 0 });
+    try builder.addExtendedError(0x1234, "future");
+
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    var it = extendedErrors(opt);
+    const first = (try it.next()).?;
+    try std.testing.expectEqual(ExtendedErrorCode.dnssec_bogus, first.code());
+    try std.testing.expectEqualStrings("signature failed", first.extra_text);
+    const second = (try it.next()).?;
+    try std.testing.expectEqual(@as(u16, 0x1234), second.info_code);
+    try std.testing.expect((try it.next()) == null);
+
+    const before = builder.pos;
+    try std.testing.expectError(error.InvalidExtendedError, builder.addExtendedErrorCode(.other_error, "bad\xc0"));
+    try std.testing.expectEqual(before, builder.pos);
 }
