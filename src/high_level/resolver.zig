@@ -435,8 +435,8 @@ pub fn Resolver(comptime config: Config) type {
             return self.complete(handle, .referral);
         }
 
-        /// Release terminal query state. Handles are generation-checked, so a
-        /// stale handle cannot cancel a later query that reuses the same slot.
+        /// Release or cancel active query state. Handles are generation-checked,
+        /// so a stale handle cannot cancel a later query that reuses the same slot.
         pub fn release(self: *Self, handle: Handle) Error!void {
             var slot = try self.slotFor(handle);
             slot.active = false;
