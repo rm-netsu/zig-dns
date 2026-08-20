@@ -10,6 +10,7 @@ const zoneversion_mod = @import("edns/zoneversion.zig");
 const mqtype_mod = @import("edns/mqtype.zig");
 const expire_mod = @import("edns/expire.zig");
 const report_channel_mod = @import("edns/report_channel.zig");
+const padding_mod = @import("edns/padding.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -19,9 +20,10 @@ pub const zoneversion = zoneversion_mod;
 pub const mqtype = mqtype_mod;
 pub const expire = expire_mod;
 pub const report_channel = report_channel_mod;
+pub const padding = padding_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -153,6 +155,25 @@ pub fn parseMultipleQtypeResponse(opt: Option) Error!MultipleQtypeList {
     return mqtype_mod.parseResponse(opt.data) catch error.InvalidMultipleQtype;
 }
 
+pub const Padding = padding_mod.Padding;
+pub fn parsePadding(opt: Option) Error!Padding {
+    if (opt.code != .PADDING) return error.InvalidOption;
+    return padding_mod.parse(opt.data);
+}
+
+/// Find the single RFC 7830 Padding option. Duplicate options are invalid.
+pub fn paddingOption(opt: ?Opt) Error!?Padding {
+    const present = opt orelse return null;
+    var iterator = present.iterator();
+    var value: ?Padding = null;
+    while (try iterator.next()) |option| {
+        if (option.code != .PADDING) continue;
+        if (value != null) return error.InvalidPadding;
+        value = try parsePadding(option);
+    }
+    return value;
+}
+
 pub const ReportChannel = report_channel_mod.ReportChannel;
 pub fn parseReportChannel(opt: Option) Error!ReportChannel {
     if (opt.code != .REPORT_CHANNEL) return error.InvalidOption;
@@ -221,6 +242,7 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
 
 pub const MessageOptionSummary = struct {
     has_zoneversion: bool = false,
+    has_padding: bool = false,
     report_channel: ?Option = null,
     mqtype_query: ?Option = null,
     mqtype_response: ?Option = null,
@@ -247,6 +269,10 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
         switch (option.code) {
             .EXPIRE => if (opcode != .query) return error.InvalidExpire,
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
+            .PADDING => {
+                if (summary.has_padding) return error.InvalidPadding;
+                summary.has_padding = true;
+            },
             .REPORT_CHANNEL => {
                 if (summary.report_channel != null) return error.InvalidReportChannel;
                 summary.report_channel = option;
@@ -531,6 +557,16 @@ pub const OptionBuilder = struct {
         @memset(self.out[start + 4 ..][0..len], 0);
     }
 
+    /// Add one block-length Padding option when it fits within the caller's
+    /// selected message-size limit. Returns false without mutation when the
+    /// next padded block would exceed that limit.
+    pub fn addBlockPadding(self: *OptionBuilder, unpadded_len: usize, block_len: usize, max_len: usize) error{ NoSpace, InvalidPadding }!bool {
+        const len = padding_mod.blockLength(unpadded_len, block_len, max_len) catch return error.InvalidPadding;
+        const padding_len = len orelse return false;
+        try self.addPadding(padding_len);
+        return true;
+    }
+
     pub fn bytes(self: OptionBuilder) []const u8 {
         return self.out[0..self.pos];
     }
@@ -703,5 +739,21 @@ test "RFC 9567 Report-Channel builder rejects root transactionally" {
     const before = builder.pos;
     const root = try name_mod.Uncompressed.init(&.{0});
     try std.testing.expectError(error.InvalidReportChannel, builder.addReportChannel(root));
+    try std.testing.expectEqual(before, builder.pos);
+}
+
+test "RFC 8467 block padding builder is bounded and transactional" {
+    var bytes: [128]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try std.testing.expect(try builder.addBlockPadding(59, 128, 128));
+    try std.testing.expectEqual(@as(usize, 69), builder.bytes().len);
+
+    var iterator: Iterator = .{ .bytes = builder.bytes() };
+    const parsed = try parsePadding((try iterator.next()).?);
+    try std.testing.expectEqual(@as(usize, 65), parsed.len());
+    try std.testing.expect(std.mem.allEqual(u8, parsed.bytes, 0));
+
+    const before = builder.pos;
+    try std.testing.expect(!(try builder.addBlockPadding(125, 128, 128)));
     try std.testing.expectEqual(before, builder.pos);
 }

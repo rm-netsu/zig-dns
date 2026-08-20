@@ -481,3 +481,25 @@ test "strict validator enforces RFC 9567 Report-Channel response semantics" {
     try root.addOpt(1232, 0, 0, .{}, root_options.bytes());
     try std.testing.expectError(error.InvalidReportChannel, messageStrict(try message.Message.init(try root.finish()), .{}));
 }
+
+test "strict validator rejects duplicate RFC 7830 Padding options" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [32]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var valid_options = edns.OptionBuilder.init(&option_buf);
+    try valid_options.add(.PADDING, &.{ 0xaa, 0xbb });
+    var valid = try builder_mod.Builder.init(&packet, &compression, 0x8801, .{});
+    try valid.addQuestion("example.com", .A, .IN);
+    try valid.addOpt(1232, 0, 0, .{}, valid_options.bytes());
+    _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
+
+    var duplicate_options = edns.OptionBuilder.init(&option_buf);
+    try duplicate_options.addPadding(0);
+    try duplicate_options.addPadding(4);
+    var duplicate = try builder_mod.Builder.init(&packet, &compression, 0x8802, .{});
+    try duplicate.addQuestion("example.com", .A, .IN);
+    try duplicate.addOpt(1232, 0, 0, .{}, duplicate_options.bytes());
+    try std.testing.expectError(error.InvalidPadding, messageStrict(try message.Message.init(try duplicate.finish()), .{}));
+}

@@ -80,7 +80,7 @@ test "operational EDNS parsers survive arbitrary payloads" {
         for (payload[0..len]) |*b| b.* = rng.byte();
         const data = payload[0..len];
 
-        switch (rng.next() % 10) {
+        switch (rng.next() % 11) {
             0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
             1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
             2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
@@ -90,7 +90,8 @@ test "operational EDNS parsers survive arbitrary payloads" {
             6 => _ = edns.parseExpire(.{ .code = .EXPIRE, .data = data }) catch continue,
             7 => _ = edns.parseMultipleQtypeQuery(.{ .code = .MQTYPE_QUERY, .data = data }) catch continue,
             8 => _ = edns.parseMultipleQtypeResponse(.{ .code = .MQTYPE_RESPONSE, .data = data }) catch continue,
-            else => _ = edns.parseReportChannel(.{ .code = .REPORT_CHANNEL, .data = data }) catch continue,
+            9 => _ = edns.parseReportChannel(.{ .code = .REPORT_CHANNEL, .data = data }) catch continue,
+            else => _ = edns.parsePadding(.{ .code = .PADDING, .data = data }) catch continue,
         }
     }
 }
@@ -185,6 +186,18 @@ test "operational EDNS builders round trip deterministic generated values" {
                 try std.testing.expectEqualSlices(u8, &wire, parsed.agent_domain.bytes);
             },
         }
+    }
+}
+
+test "EDNS block padding reaches exact deterministic boundaries" {
+    var rng: Lcg = .{ .state = 0xed05_8467_0000_0001 };
+    for (0..1024) |_| {
+        const block: usize = 16 + @as(usize, @intCast(rng.next() % 497));
+        const base: usize = 12 + @as(usize, @intCast(rng.next() % 1400));
+        const max_len: usize = base + 4 + block;
+        const len = (try edns.padding.blockLength(base, block, max_len)).?;
+        try std.testing.expectEqual(@as(usize, 0), (base + 4 + len) % block);
+        try std.testing.expect(len < block);
     }
 }
 
