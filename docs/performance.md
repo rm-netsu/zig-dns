@@ -217,7 +217,7 @@ The reference `SliceStore` descriptor is 32 bytes and `Composer(SliceStore)` is 
 
 The TSIG workload includes the response HMAC and secure-zeroing the returned MAC. The signed request MAC is prepared before timing. Exact tail reservation is part of the compose call, so the measured path exercises the production rule that OPT/ordinary RRsets must leave sufficient room for final TSIG without exceeding the negotiated UDP response limit.
 
-Raw samples are retained in `bench/results/authoritative-v0.7.0-dev-2026-08-20.json`.
+Raw samples are retained in `bench/results/authoritative-v0.7.0-2026-08-20.json`.
 
 ## Benchmark policy
 

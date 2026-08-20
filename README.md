@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.6.0 is the current high-level resolver-composition release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.7.0 is the current authoritative-composition release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -169,7 +169,7 @@ Two representations are intentionally available:
 
 ## Scope
 
-Version 0.6.0 includes:
+Version 0.7.0 includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;

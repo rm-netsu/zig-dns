@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-08-20
+
 - Add caller-defined authoritative QUERY response composition for exact answers, CNAME/DNAME, RFC 4592 wildcards, delegations/referrals, glue, DS-at-cut, NODATA/NXDOMAIN, EDNS/BADVERS, explicit ANY policy, and whole-RRset truncation.
 - Add DNSSEC-aware authoritative output with store-provided RRSIG and NSEC/NSEC3 proof hooks that fail closed when a zone declared signed cannot supply required material.
 - Add an allocation-free `SliceStore` reference adapter while keeping production indexing/database ownership outside the protocol core.
