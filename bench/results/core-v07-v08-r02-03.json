@@ -1,0 +1,221 @@
+{
+  "benchmark_hash": "23c4a01c33",
+  "cpu": 4,
+  "inputs": [
+    "bench/core.zig",
+    "bench/real_corpus.zig",
+    "bench/corpus/bench_nx_20260820_example_com_a.dns",
+    "bench/corpus/chatgpt_com_txt.dns",
+    "bench/corpus/cloudflare_com_a.dns",
+    "bench/corpus/cloudflare_com_aaaa.dns",
+    "bench/corpus/cloudflare_com_caa.dns",
+    "bench/corpus/cloudflare_com_ns.dns",
+    "bench/corpus/com_referral.dns",
+    "bench/corpus/dns_google_txt.dns",
+    "bench/corpus/example_com_cname.dns",
+    "bench/corpus/example_com_ds.dns",
+    "bench/corpus/gmail_com_mx.dns",
+    "bench/corpus/root_dnskey.dns",
+    "bench/corpus/status_openai_com_a.dns",
+    "bench/corpus/root_dnskey_1.rdata",
+    "bench/corpus/root_dnskey_2.rdata",
+    "bench/corpus/root_dnskey_3.rdata"
+  ],
+  "medians": {
+    "HEAD": {
+      "core.build_real_corpus": {
+        "mib_per_s": 314.7795931911061,
+        "ns_per_op": 766.7133439560439,
+        "ops_per_s": 1309003.7361895805,
+        "ops_per_s_mad_pct": 6.014564008658839
+      },
+      "core.materialize_real_names": {
+        "mib_per_s": 552.5929197031951,
+        "ns_per_op": 437.7408547008547,
+        "ops_per_s": 2297945.013367623,
+        "ops_per_s_mad_pct": 7.661433764034759
+      },
+      "core.parse_real_corpus": {
+        "mib_per_s": 572.5530739896446,
+        "ns_per_op": 420.54052115384616,
+        "ops_per_s": 2380948.8582833903,
+        "ops_per_s_mad_pct": 3.5830481185086236
+      },
+      "core.validate_real_corpus": {
+        "mib_per_s": 216.10813328941333,
+        "ns_per_op": 1124.436591025641,
+        "ops_per_s": 898680.7277721288,
+        "ops_per_s_mad_pct": 10.198133745478813
+      }
+    },
+    "v0.7.0": {
+      "core.build_real_corpus": {
+        "mib_per_s": 300.0458706976745,
+        "ns_per_op": 801.6215307692307,
+        "ops_per_s": 1247733.888305339,
+        "ops_per_s_mad_pct": 1.4501906714238781
+      },
+      "core.materialize_real_names": {
+        "mib_per_s": 512.9269985702041,
+        "ns_per_op": 471.0921564102564,
+        "ops_per_s": 2132995.1878846106,
+        "ops_per_s_mad_pct": 6.938310905154106
+      },
+      "core.parse_real_corpus": {
+        "mib_per_s": 580.6316036355239,
+        "ns_per_op": 414.3893451923077,
+        "ops_per_s": 2414543.238980598,
+        "ops_per_s_mad_pct": 2.367862336377321
+      },
+      "core.validate_real_corpus": {
+        "mib_per_s": 203.16384862285688,
+        "ns_per_op": 1185.1937871794871,
+        "ops_per_s": 844852.2161489597,
+        "ops_per_s_mad_pct": 3.621980659023548
+      }
+    }
+  },
+  "paired": {
+    "core.build_real_corpus": {
+      "HEAD": {
+        "vs_baseline_mad_pct": 4.789513693893733,
+        "vs_baseline_median_pct": 4.841032925006816,
+        "vs_previous_mad_pct": 4.789513693893733,
+        "vs_previous_median_pct": 4.841032925006816
+      },
+      "v0.7.0": {}
+    },
+    "core.materialize_real_names": {
+      "HEAD": {
+        "vs_baseline_mad_pct": 15.804864119424582,
+        "vs_baseline_median_pct": 8.829839444116931,
+        "vs_previous_mad_pct": 15.804864119424582,
+        "vs_previous_median_pct": 8.829839444116931
+      },
+      "v0.7.0": {}
+    },
+    "core.parse_real_corpus": {
+      "HEAD": {
+        "vs_baseline_mad_pct": 5.871405329068002,
+        "vs_baseline_median_pct": -1.2523080191845448,
+        "vs_previous_mad_pct": 5.871405329068002,
+        "vs_previous_median_pct": -1.2523080191845448
+      },
+      "v0.7.0": {}
+    },
+    "core.validate_real_corpus": {
+      "HEAD": {
+        "vs_baseline_mad_pct": 7.004331774882922,
+        "vs_baseline_median_pct": 6.117656819127826,
+        "vs_previous_mad_pct": 7.004331774882922,
+        "vs_previous_median_pct": 6.117656819127826
+      },
+      "v0.7.0": {}
+    }
+  },
+  "resolved_revisions": {
+    "HEAD": "1da51f45b46be0c671ed3c61c90b6940e75a75cc",
+    "v0.7.0": "63000a96d176aefd70691989f6dffd3bdc894b69"
+  },
+  "revisions": [
+    "v0.7.0",
+    "HEAD"
+  ],
+  "round_offset": 2,
+  "runs": 2,
+  "samples": {
+    "HEAD": [
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 295.8469730724311,
+          "ns_per_op": 812.8278087912088,
+          "ops_per_s": 1230272.8686007224
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 510.25637917538904,
+          "ns_per_op": 471.27808034188035,
+          "ops_per_s": 2121889.478234523
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 552.0382218445953,
+          "ns_per_op": 435.6086903846154,
+          "ops_per_s": 2295638.3150140145
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 194.06913682170133,
+          "ns_per_op": 1239.1081384615384,
+          "ops_per_s": 807032.0652090848
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 333.7122133097811,
+          "ns_per_op": 720.5988791208791,
+          "ops_per_s": 1387734.6037784384
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 594.9294602310013,
+          "ns_per_op": 404.20362905982904,
+          "ops_per_s": 2474000.548500723
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 593.0679261346938,
+          "ns_per_op": 405.4723519230769,
+          "ops_per_s": 2466259.4015527656
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 238.1471297571253,
+          "ns_per_op": 1009.7650435897436,
+          "ops_per_s": 990329.3903351729
+        }
+      }
+    ],
+    "v0.7.0": [
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 295.6946334708243,
+          "ns_per_op": 813.2465714285714,
+          "ops_per_s": 1229639.3678529407
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 548.5154684474802,
+          "ns_per_op": 438.40631794871797,
+          "ops_per_s": 2280989.025612021
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 594.3801606911131,
+          "ns_per_op": 404.57717596153844,
+          "ops_per_s": 2471716.2989319647
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 195.80529331960912,
+          "ns_per_op": 1228.121276923077,
+          "ops_per_s": 814251.8322827126
+        }
+      },
+      {
+        "core.build_real_corpus": {
+          "mib_per_s": 304.39710792452473,
+          "ns_per_op": 789.9964901098901,
+          "ops_per_s": 1265828.4087577376
+        },
+        "core.materialize_real_names": {
+          "mib_per_s": 477.3385286929279,
+          "ns_per_op": 503.7779948717949,
+          "ops_per_s": 1985001.3501572004
+        },
+        "core.parse_real_corpus": {
+          "mib_per_s": 566.8830465799347,
+          "ns_per_op": 424.2015144230769,
+          "ops_per_s": 2357370.1790292314
+        },
+        "core.validate_real_corpus": {
+          "mib_per_s": 210.52240392610463,
+          "ns_per_op": 1142.2662974358975,
+          "ops_per_s": 875452.6000152068
+        }
+      }
+    ]
+  },
+  "zig_version": "0.16.0"
+}

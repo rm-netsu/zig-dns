@@ -204,6 +204,7 @@ def main() -> int:
         revisions = payloads[0]["revisions"]
         cpu = payloads[0].get("cpu")
         zig_version = payloads[0].get("zig_version")
+        resolved_revisions = payloads[0].get("resolved_revisions")
         samples: dict[str, list[dict[str, dict[str, float]]]] = {revision: [] for revision in revisions}
         for payload in payloads:
             if payload["revisions"] != revisions:
@@ -216,6 +217,8 @@ def main() -> int:
                 raise RuntimeError("cannot merge batches from different CPUs")
             if payload.get("zig_version") != zig_version:
                 raise RuntimeError("cannot merge batches from different Zig versions")
+            if payload.get("resolved_revisions") != resolved_revisions:
+                raise RuntimeError("cannot merge batches from different resolved revision commits")
             for revision in revisions:
                 samples[revision].extend(payload["samples"][revision])
 
@@ -229,6 +232,7 @@ def main() -> int:
                 "round_offset": None,
                 "cpu": cpu,
                 "revisions": revisions,
+                "resolved_revisions": resolved_revisions,
                 "benchmark_hash": benchmark_hash,
                 "zig_version": zig_version,
                 "inputs": [path.relative_to(repo).as_posix() for path in benchmark_inputs],
@@ -238,6 +242,11 @@ def main() -> int:
             }
             args.json.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n")
         return 0
+
+    resolved_revisions = {
+        revision: run(["git", "rev-parse", f"{revision}^{{commit}}"], cwd=repo, capture=True).stdout.strip()
+        for revision in args.revisions
+    }
 
     cpu = args.cpu
     taskset = shutil.which("taskset")
@@ -257,7 +266,8 @@ def main() -> int:
     worktrees: list[pathlib.Path] = []
     try:
         for revision in args.revisions:
-            key = safe_name(revision)
+            resolved = resolved_revisions[revision]
+            key = safe_name(f"{revision}@{resolved[:12]}")
             binary = binary_base / f"{key}-{benchmark_hash}"
             binaries[revision] = binary
             if args.reuse_binaries:
@@ -294,7 +304,7 @@ def main() -> int:
 
         if args.prepare_only:
             for revision in args.revisions:
-                print(f"prepared {revision}: {binaries[revision]}")
+                print(f"prepared {revision} ({resolved_revisions[revision][:12]}): {binaries[revision]}")
             return 0
 
         samples: dict[str, list[dict[str, dict[str, float]]]] = {rev: [] for rev in args.revisions}
@@ -339,6 +349,7 @@ def main() -> int:
             "round_offset": args.round_offset,
             "cpu": cpu,
             "revisions": args.revisions,
+            "resolved_revisions": resolved_revisions,
             "benchmark_hash": benchmark_hash,
             "zig_version": zig_version,
             "inputs": [path.relative_to(repo).as_posix() for path in benchmark_inputs],
