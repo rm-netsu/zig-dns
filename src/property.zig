@@ -12,6 +12,7 @@ const update = @import("update.zig");
 const types = @import("types.zig");
 const transfer = @import("transfer.zig");
 const resolver = @import("resolver.zig");
+const dsync = @import("dsync.zig");
 const resinfo = @import("resinfo.zig");
 
 const Lcg = struct {
@@ -90,6 +91,51 @@ test "RESINFO parser survives arbitrary TXT payloads" {
                 .qnamemin, .unknown => {},
             }
         }
+    }
+}
+
+test "DSYNC parser survives arbitrary RDATA" {
+    var rng: Lcg = .{ .state = 0x9859_d5a1_0000_0001 };
+    var payload: [96]u8 = undefined;
+
+    for (0..4096) |_| {
+        const len: usize = @intCast(rng.next() % (payload.len + 1));
+        for (payload[0..len]) |*b| b.* = rng.byte();
+        _ = dsync.parseRdata(payload[0..len]) catch continue;
+    }
+}
+
+test "DSYNC builder round trips deterministic generated endpoints" {
+    var rng: Lcg = .{ .state = 0x9859_d5a1_ba11_0001 };
+    var packet: [512]u8 = undefined;
+    var compression: [32]builder.CompressionEntry = undefined;
+
+    for (0..512) |round| {
+        var target: [24]u8 = undefined;
+        target[0] = 8;
+        for (target[1..9]) |*b| b.* = 'a' + @as(u8, @intCast(rng.next() % 26));
+        target[9] = 7;
+        @memcpy(target[10..17], "example");
+        target[17] = 3;
+        @memcpy(target[18..21], "net");
+        target[21] = 0;
+        const target_name = try name.Uncompressed.init(target[0..22]);
+
+        const notification_type: types.Type = @enumFromInt(@as(u16, @truncate(rng.next())));
+        const scheme: dsync.Scheme = @enumFromInt(@as(u8, @truncate(rng.next())));
+        const port: u16 = @truncate(rng.next());
+
+        var b = try builder.Builder.init(&packet, &compression, @intCast(round), .{ .response = true });
+        try b.addDsync(.answer, "_dsync.example", .IN, 300, notification_type, scheme, port, target_name);
+        const wire = try b.finish();
+        const m = try message.Message.init(wire);
+        var records = try m.records(.answer);
+        const rr = (try records.next()).?;
+        const parsed = try dsync.parse(rr);
+        try std.testing.expectEqual(notification_type, parsed.notification_type);
+        try std.testing.expectEqual(scheme, parsed.scheme);
+        try std.testing.expectEqual(port, parsed.port);
+        try std.testing.expectEqualSlices(u8, target_name.bytes, parsed.target.bytes);
     }
 }
 

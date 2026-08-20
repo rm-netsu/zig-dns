@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const name_mod = @import("name.zig");
 const edns = @import("edns.zig");
+const dsync_mod = @import("dsync.zig");
 const resinfo_mod = @import("resinfo.zig");
 
 pub const Error = name_mod.Error || error{ NoSpace, TooManyRecords, SectionOrder, RecordOpen, NoRecordOpen, RdataTooLong };
@@ -205,6 +206,29 @@ pub const Builder = struct {
                 try w.writeBytes(value);
             }
         }
+        try w.finish();
+    }
+
+    /// Serialize RFC 9859 DSYNC RDATA without name compression. The target
+    /// is accepted only as a prevalidated uncompressed wire name so a caller
+    /// cannot accidentally emit a compression pointer in this field.
+    pub fn addDsync(
+        self: *Builder,
+        section: types.Section,
+        owner: []const u8,
+        class: types.Class,
+        ttl: u32,
+        notification_type: types.Type,
+        scheme: dsync_mod.Scheme,
+        port: u16,
+        target: name_mod.Uncompressed,
+    ) Error!void {
+        var w = try self.beginRecord(section, owner, .DSYNC, class, ttl);
+        errdefer w.abort();
+        try w.writeU16(@intFromEnum(notification_type));
+        try w.writeByte(@intFromEnum(scheme));
+        try w.writeU16(port);
+        try w.writeWireName(target);
         try w.finish();
     }
 
@@ -469,6 +493,22 @@ test "RESINFO builder rejects invalid known value before mutation" {
     try std.testing.expectEqual(@as(u16, 0), b.header.answer_count);
 }
 
+test "DSYNC builder is transactional and keeps target uncompressed" {
+    var out: [56]u8 = undefined;
+    var entries: [8]CompressionEntry = undefined;
+    var b = try Builder.init(&out, &entries, 10, .{ .response = true });
+    try b.addQuestion("_dsync.example", .DSYNC, .IN);
+    const before = b.pos;
+    const before_compression = b.compression_len;
+    const target = try name_mod.Uncompressed.init(&.{ 2, 'n', 's', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'n', 'e', 't', 0 });
+
+    try std.testing.expectError(error.NoSpace, b.addDsync(.answer, "_dsync.example", .IN, 300, .CDS, .notify, 5359, target));
+    try std.testing.expectEqual(before, b.pos);
+    try std.testing.expectEqual(before_compression, b.compression_len);
+    try std.testing.expectEqual(@as(u16, 0), b.header.answer_count);
+    try std.testing.expect(!b.record_open);
+}
+
 test "wire owner preserves arbitrary label octets" {
     var out: [128]u8 = undefined;
     var entries: [4]CompressionEntry = undefined;
@@ -501,6 +541,8 @@ test "typed modern record helpers produce strictly valid message" {
         .{ .key = "exterr", .value = "15-17" },
         .{ .key = "infourl", .value = "https://resolver.example.com/guide" },
     });
+    const dsync_target = try name_mod.Uncompressed.init(&.{ 3, 'c', 'd', 's', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'n', 'e', 't', 0 });
+    try b.addDsync(.additional, "_dsync.example.com", .IN, 300, .CDS, .notify, 5359, dsync_target);
     const target = try name_mod.Uncompressed.init(&.{ 3, 's', 'v', 'c', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0 });
     const port_param = [_]u8{ 0, 3, 0, 2, 1, 0xbb };
     try b.addSvcb(.additional, "_https.example.com", .HTTPS, 300, 1, target, &port_param);

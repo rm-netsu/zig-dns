@@ -6,9 +6,10 @@ const rdata = @import("rdata.zig");
 const edns = @import("edns.zig");
 const dnssec = @import("dnssec.zig");
 const svcb_mod = @import("svcb.zig");
+const dsync_mod = @import("dsync.zig");
 const tsig_mod = @import("tsig.zig");
 
-pub const Error = message.ParseError || rdata.Error || edns.Error || dnssec.Error || svcb_mod.Error || tsig_mod.Error || error{
+pub const Error = message.ParseError || rdata.Error || edns.Error || dnssec.Error || svcb_mod.Error || dsync_mod.Error || tsig_mod.Error || error{
     OptOutsideAdditional,
     MultipleOpt,
     InvalidOptOwner,
@@ -197,6 +198,7 @@ pub fn knownRdata(rr: message.Record) Error!void {
         .NSEC3PARAM => _ = try dnssec.nsec3param(rr),
         .TLSA, .SMIMEA => _ = try rdata.tlsa(rr),
         .SVCB, .HTTPS => _ = try svcb_mod.validateRecord(rr),
+        .DSYNC => _ = try dsync_mod.parse(rr),
         .TSIG => _ = try tsig_mod.parse(rr),
         else => {},
     }

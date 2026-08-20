@@ -58,6 +58,7 @@ pub const Type = enum(u16) {
     ZONEMD = 63,
     SVCB = 64,
     HTTPS = 65,
+    DSYNC = 66,
     NXNAME = 128,
     TKEY = 249,
     TSIG = 250,
@@ -187,6 +188,7 @@ test "header round trip" {
 test "data RRTYPE classification preserves private use and rejects meta ranges" {
     try std.testing.expect(isDataRrType(.A));
     try std.testing.expect(isDataRrType(.HTTPS));
+    try std.testing.expect(isDataRrType(.DSYNC));
     try std.testing.expect(isDataRrType(.RESINFO));
     try std.testing.expect(isDataRrType(@enumFromInt(65280)));
     try std.testing.expect(!isDataRrType(@enumFromInt(0)));
