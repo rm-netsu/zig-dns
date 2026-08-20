@@ -49,6 +49,7 @@ pub const Error = record_mod.Error || message.ParseError || error{
     TooManyUnsignedMessages,
     TimeWentBackward,
     UnexpectedTsigError,
+    UnsignedErrorRequired,
 };
 
 /// Borrowed TSIG key. Secret bytes are never copied into persistent library
@@ -176,7 +177,8 @@ pub fn sign(unsigned_message: []const u8, key: Key, options: SignOptions) Error!
     if (options.time_signed > record_mod.max_time_signed) return error.TimeSignedOutOfRange;
     if (options.other_data.len > std.math.maxInt(u16)) return error.FieldTooLong;
     if (unsigned_message.len < types.Header.wire_len) return error.InvalidMessage;
-    _ = try types.Header.parse(unsigned_message);
+    const header = try types.Header.parse(unsigned_message);
+    try validateSignSemantics(header.flags.response, options);
 
     var state = HmacState.init(key.algorithm, key.secret);
     defer state.deinit();
@@ -190,6 +192,25 @@ pub fn sign(unsigned_message: []const u8, key: Key, options: SignOptions) Error!
     try validateGeneratedMacLen(key.algorithm, wanted);
     result.len = wanted;
     return result;
+}
+
+fn validateSignSemantics(is_response: bool, options: SignOptions) Error!void {
+    if (!is_response) {
+        if (options.error_code != .no_error) return error.RequestErrorMustBeZero;
+        return;
+    }
+
+    // RFC 8945 section 5.3.2: BADKEY and BADSIG responses are explicitly
+    // unsigned. Keeping this check in the signing primitive prevents callers
+    // from accidentally producing a response that violates the protocol.
+    if (options.error_code == .bad_key or options.error_code == .bad_signature) {
+        return error.UnsignedErrorRequired;
+    }
+    if (options.error_code == .bad_time) {
+        if (options.other_data.len != 6) return error.InvalidBadTimeData;
+    } else if (options.other_data.len != 0) {
+        return error.UnexpectedOtherData;
+    }
 }
 
 /// Convenience composition over Builder: hash the complete unsigned DNS
@@ -726,4 +747,41 @@ test "TSIG Key.init uses caller-owned name storage" {
     try std.testing.expectEqualStrings("borrowed secret", key.secret);
     const n = try name_mod.Name.init(key.name.bytes, 0);
     try std.testing.expect(try n.eqlPresentationIgnoreCase("key.example"));
+}
+
+test "TSIG signer rejects wire-invalid request and signed BADKEY BADSIG responses" {
+    var key_name_buf: [64]u8 = undefined;
+    const key = try Key.init("key.example", "shared secret bytes", &key_name_buf);
+
+    var request_packet: [256]u8 = undefined;
+    var request_compression: [8]builder_mod.CompressionEntry = undefined;
+    var request = try builder_mod.Builder.init(&request_packet, &request_compression, 1, .{});
+    try request.addQuestion("example.com", .A, .IN);
+    const request_wire = try request.finish();
+    try std.testing.expectError(error.RequestErrorMustBeZero, sign(request_wire, key, .{
+        .time_signed = 100,
+        .error_code = .bad_time,
+    }));
+
+    var response_packet: [256]u8 = undefined;
+    var response_compression: [8]builder_mod.CompressionEntry = undefined;
+    var response = try builder_mod.Builder.init(&response_packet, &response_compression, 1, .{ .response = true });
+    try response.addQuestion("example.com", .A, .IN);
+    const response_wire = try response.finish();
+    try std.testing.expectError(error.UnsignedErrorRequired, sign(response_wire, key, .{
+        .time_signed = 100,
+        .error_code = .bad_key,
+    }));
+    try std.testing.expectError(error.UnsignedErrorRequired, sign(response_wire, key, .{
+        .time_signed = 100,
+        .error_code = .bad_signature,
+    }));
+    try std.testing.expectError(error.InvalidBadTimeData, sign(response_wire, key, .{
+        .time_signed = 100,
+        .error_code = .bad_time,
+    }));
+    try std.testing.expectError(error.UnexpectedOtherData, sign(response_wire, key, .{
+        .time_signed = 100,
+        .other_data = &.{1},
+    }));
 }
