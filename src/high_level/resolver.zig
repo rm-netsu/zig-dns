@@ -9,6 +9,7 @@ const response_mod = @import("../resolver/response.zig");
 const alias_mod = @import("../resolver/alias.zig");
 const retry_mod = @import("../resolver/retry.zig");
 const referral_mod = @import("../resolver/referral.zig");
+const dnssec_status = @import("../dnssec/status.zig");
 
 /// Compile-time storage limits for the high-level resolver state machine.
 pub const Config = struct {
@@ -41,6 +42,8 @@ pub const BeginOptions = struct {
     /// Number of caller-owned upstream server choices available to this query.
     server_count: usize = 1,
     transport: Transport = .udp,
+    /// Caller-injected time used only for optional cache lookup.
+    now: u64 = 0,
 };
 
 pub const DispatchReason = enum {
@@ -72,10 +75,30 @@ pub const CompletionKind = enum {
     referral,
 };
 
+pub const SecurityStatus = dnssec_status.SecurityStatus;
+
+pub const CompletionSource = enum { network, cache };
+
+pub const CacheHit = struct {
+    kind: CompletionKind,
+    security: SecurityStatus = .indeterminate,
+    /// Opaque caller-defined identifier (for example, a fixed-cache slot).
+    token: usize,
+};
+
+pub const CacheHooks = struct {
+    context: *anyopaque,
+    lookup: *const fn (*anyopaque, client.WireQuestionKey, u64) ?CacheHit,
+    store: ?*const fn (*anyopaque, client.WireQuestionKey, CompletionKind, SecurityStatus, message.Message, u64) void = null,
+};
+
 pub const Completion = struct {
     handle: Handle,
     kind: CompletionKind,
     server_index: usize,
+    source: CompletionSource,
+    security: SecurityStatus,
+    cache_token: ?usize = null,
 };
 
 pub const ReferralAction = struct {
@@ -159,6 +182,9 @@ pub fn Resolver(comptime config: Config) type {
             server_count: usize = 0,
             server_index: usize = 0,
             queries_sent: u8 = 0,
+            now: u64 = 0,
+            security: SecurityStatus = .indeterminate,
+            security_set: bool = false,
             alias_entries: [config.max_alias_depth + 1]alias_mod.Entry = undefined,
             alias_storage: [config.alias_storage_bytes]u8 = undefined,
             alias_count: usize = 0,
@@ -193,15 +219,24 @@ pub fn Resolver(comptime config: Config) type {
         };
 
         storage: *Storage,
+        cache_hooks: ?CacheHooks = null,
         next_id: u16 = 1,
         next_generation: u32 = 1,
 
         pub fn initInPlace(storage: *Storage) Self {
+            return initStorage(storage, null);
+        }
+
+        pub fn initInPlaceWithCache(storage: *Storage, hooks: CacheHooks) Self {
+            return initStorage(storage, hooks);
+        }
+
+        fn initStorage(storage: *Storage, hooks: ?CacheHooks) Self {
             for (&storage.slots) |*slot| {
                 slot.active = false;
                 slot.generation = 0;
             }
-            return .{ .storage = storage };
+            return .{ .storage = storage, .cache_hooks = hooks };
         }
 
         pub fn activeCount(self: *const Self) usize {
@@ -219,6 +254,7 @@ pub fn Resolver(comptime config: Config) type {
             slot.saveChain(chain_state);
             slot.qtype = q.qtype;
             slot.qclass = q.qclass;
+            if (self.lookupCache(index, options.now)) |cached| return cached;
             try self.finishBegin(index, options);
             return self.transportAction(index, .initial);
         }
@@ -232,6 +268,7 @@ pub fn Resolver(comptime config: Config) type {
             slot.saveChain(chain_state);
             slot.qtype = q.qtype;
             slot.qclass = q.qclass;
+            if (self.lookupCache(index, options.now)) |cached| return cached;
             try self.finishBegin(index, options);
             return self.transportAction(index, .initial);
         }
@@ -286,8 +323,21 @@ pub fn Resolver(comptime config: Config) type {
         /// Consume one response for a known query. Peer/wire failures are fed
         /// into retry policy rather than surfaced as generic parser failures.
         pub fn onResponse(self: *Self, handle: Handle, bytes: []const u8) Error!Action {
+            const slot = try self.slotFor(handle);
+            return self.onValidatedResponse(handle, bytes, slot.now, .indeterminate);
+        }
+
+        pub fn onResponseAt(self: *Self, handle: Handle, bytes: []const u8, now: u64) Error!Action {
+            return self.onValidatedResponse(handle, bytes, now, .indeterminate);
+        }
+
+        /// Process a response after caller-owned DNSSEC validation. The status
+        /// is composed across accepted alias/referral hops and propagated to
+        /// terminal completion/cache hooks.
+        pub fn onValidatedResponse(self: *Self, handle: Handle, bytes: []const u8, now: u64, security: SecurityStatus) Error!Action {
             var slot = try self.slotFor(handle);
             if (slot.phase != .awaiting_response) return error.UnexpectedState;
+            slot.now = now;
 
             const parsed = client.validateResponseWire(slot.id, slot.currentQuestion(), bytes) catch {
                 return self.applyRetry(handle, .malformed_response);
@@ -297,12 +347,28 @@ pub fn Resolver(comptime config: Config) type {
             };
 
             switch (inspected.outcome) {
-                .cname => |rr| return self.followAlias(handle, parsed, rr, false),
-                .dname => |rr| return self.followAlias(handle, parsed, rr, true),
-                .answer => return self.complete(handle, .answer),
-                .nodata => return self.complete(handle, .nodata),
-                .nxdomain => return self.complete(handle, .nxdomain),
+                .cname => |rr| {
+                    self.noteSecurity(slot, security);
+                    return self.followAlias(handle, parsed, rr, false);
+                },
+                .dname => |rr| {
+                    self.noteSecurity(slot, security);
+                    return self.followAlias(handle, parsed, rr, true);
+                },
+                .answer => {
+                    self.noteSecurity(slot, security);
+                    return self.completeNetwork(handle, .answer, parsed, now);
+                },
+                .nodata => {
+                    self.noteSecurity(slot, security);
+                    return self.completeNetwork(handle, .nodata, parsed, now);
+                },
+                .nxdomain => {
+                    self.noteSecurity(slot, security);
+                    return self.completeNetwork(handle, .nxdomain, parsed, now);
+                },
                 .referral => {
+                    self.noteSecurity(slot, security);
                     const referral = try referral_mod.Referral.initWire(parsed, slot.currentQuestion());
                     slot.phase = .referral_pending;
                     return .{ .referral = .{ .handle = handle, .view = referral, .server_index = slot.server_index } };
@@ -374,10 +440,40 @@ pub fn Resolver(comptime config: Config) type {
                 slot.server_count = options.server_count;
                 slot.server_index = 0;
                 slot.queries_sent = 1;
+                slot.now = options.now;
+                slot.security = .indeterminate;
+                slot.security_set = false;
                 slot.phase = .awaiting_response;
                 return index;
             }
             return error.Full;
+        }
+
+        fn lookupCache(self: *Self, index: usize, now: u64) ?Action {
+            const hooks = self.cache_hooks orelse return null;
+            var slot = &self.storage.slots[index];
+            const hit = hooks.lookup(hooks.context, slot.currentQuestion(), now) orelse return null;
+            slot.phase = .complete;
+            slot.security = hit.security;
+            slot.security_set = true;
+            return .{ .complete = .{
+                .handle = self.handleFor(index),
+                .kind = hit.kind,
+                .server_index = 0,
+                .source = .cache,
+                .security = hit.security,
+                .cache_token = hit.token,
+            } };
+        }
+
+        fn noteSecurity(self: *Self, slot: *Slot, status: SecurityStatus) void {
+            _ = self;
+            if (!slot.security_set) {
+                slot.security = status;
+                slot.security_set = true;
+                return;
+            }
+            slot.security = combineSecurity(slot.security, status);
         }
 
         fn finishBegin(self: *Self, index: usize, options: BeginOptions) Error!void {
@@ -545,10 +641,24 @@ pub fn Resolver(comptime config: Config) type {
             };
         }
 
+        fn completeNetwork(self: *Self, handle: Handle, kind: CompletionKind, parsed: message.Message, now: u64) Error!Action {
+            var slot = try self.slotFor(handle);
+            if (self.cache_hooks) |hooks| {
+                if (hooks.store) |store| store(hooks.context, slot.currentQuestion(), kind, slot.security, parsed, now);
+            }
+            return self.complete(handle, kind);
+        }
+
         fn complete(self: *Self, handle: Handle, kind: CompletionKind) Error!Action {
             var slot = try self.slotFor(handle);
             slot.phase = .complete;
-            return .{ .complete = .{ .handle = handle, .kind = kind, .server_index = slot.server_index } };
+            return .{ .complete = .{
+                .handle = handle,
+                .kind = kind,
+                .server_index = slot.server_index,
+                .source = .network,
+                .security = if (slot.security_set) slot.security else .indeterminate,
+            } };
         }
 
         fn fail(self: *Self, handle: Handle, reason: FailureReason) Error!Action {
@@ -557,6 +667,13 @@ pub fn Resolver(comptime config: Config) type {
             return .{ .fail = .{ .handle = handle, .reason = reason } };
         }
     };
+}
+
+fn combineSecurity(a: SecurityStatus, b: SecurityStatus) SecurityStatus {
+    if (a == .bogus or b == .bogus) return .bogus;
+    if (a == .indeterminate or b == .indeterminate) return .indeterminate;
+    if (a == .insecure or b == .insecure) return .insecure;
+    return .secure;
 }
 
 fn usesExternalCorrelation(transport: Transport) bool {

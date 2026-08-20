@@ -14,6 +14,8 @@ const DispatchReason = high.DispatchReason;
 const CompletionKind = high.CompletionKind;
 const FailureReason = high.FailureReason;
 const Transport = high.Transport;
+const SecurityStatus = high.SecurityStatus;
+const CompletionSource = high.CompletionSource;
 
 fn expectActionTag(expected: std.meta.Tag(Action), action: Action) !void {
     try std.testing.expectEqual(expected, std.meta.activeTag(action));
@@ -314,4 +316,97 @@ test "stub integration can accept a referral as terminal" {
     const done = try r.acceptReferral(first.handle);
     try expectActionTag(.complete, done);
     try std.testing.expectEqual(CompletionKind.referral, done.complete.kind);
+}
+
+const TestCache = struct {
+    hit: ?high.CacheHit = null,
+    stores: usize = 0,
+    stored_kind: high.CompletionKind = .answer,
+    stored_security: SecurityStatus = .indeterminate,
+    stored_now: u64 = 0,
+
+    fn lookup(context: *anyopaque, q: client.WireQuestionKey, now: u64) ?high.CacheHit {
+        _ = q;
+        _ = now;
+        const self: *TestCache = @ptrCast(@alignCast(context));
+        return self.hit;
+    }
+
+    fn store(context: *anyopaque, q: client.WireQuestionKey, kind: high.CompletionKind, security: SecurityStatus, msg: message.Message, now: u64) void {
+        _ = q;
+        _ = msg;
+        const self: *TestCache = @ptrCast(@alignCast(context));
+        self.stores += 1;
+        self.stored_kind = kind;
+        self.stored_security = security;
+        self.stored_now = now;
+    }
+
+    fn hooks(self: *TestCache) high.CacheHooks {
+        return .{ .context = self, .lookup = lookup, .store = store };
+    }
+};
+
+test "cache hook can complete before any network dispatch" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 2, .alias_storage_bytes = 64 });
+    var storage: R.Storage = undefined;
+    var cache: TestCache = .{ .hit = .{ .kind = .answer, .security = .secure, .token = 7 } };
+    var r = R.initInPlaceWithCache(&storage, cache.hooks());
+
+    const action = try r.beginPresentation(.{ .name = "cached.example", .qtype = .A }, .{ .now = 100 });
+    try expectActionTag(.complete, action);
+    try std.testing.expectEqual(CompletionSource.cache, action.complete.source);
+    try std.testing.expectEqual(SecurityStatus.secure, action.complete.security);
+    try std.testing.expectEqual(@as(?usize, 7), action.complete.cache_token);
+
+    var packet: [128]u8 = undefined;
+    var compression: [8]builder.CompressionEntry = undefined;
+    try std.testing.expectError(error.UnexpectedState, r.writeQuery(action.complete.handle, &packet, &compression, &.{}));
+    try r.release(action.complete.handle);
+}
+
+test "validated network completion stores security and injected response time" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 2, .alias_storage_bytes = 64 });
+    var storage: R.Storage = undefined;
+    var cache: TestCache = .{};
+    var r = R.initInPlaceWithCache(&storage, cache.hooks());
+    const first = (try r.beginPresentation(.{ .name = "secure.example", .qtype = .A }, .{ .now = 10 })).send;
+
+    const q = try r.currentQuestion(first.handle);
+    var packet: [256]u8 = undefined;
+    var compression: [12]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestionWire(q.name, q.qtype, q.qclass);
+    try b.addA(.answer, "secure.example", 60, .{ 192, 0, 2, 1 });
+    const done = try r.onValidatedResponse(first.handle, try b.finish(), 25, .secure);
+
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(CompletionSource.network, done.complete.source);
+    try std.testing.expectEqual(SecurityStatus.secure, done.complete.security);
+    try std.testing.expectEqual(@as(usize, 1), cache.stores);
+    try std.testing.expectEqual(high.CompletionKind.answer, cache.stored_kind);
+    try std.testing.expectEqual(SecurityStatus.secure, cache.stored_security);
+    try std.testing.expectEqual(@as(u64, 25), cache.stored_now);
+}
+
+test "DNSSEC status is conservatively composed across alias hops" {
+    const R = Resolver(.{ .max_queries = 1, .max_alias_depth = 3, .alias_storage_bytes = 96 });
+    var storage: R.Storage = undefined;
+    var r = R.initInPlace(&storage);
+    const first = (try r.beginPresentation(.{ .name = "a.example", .qtype = .A }, .{})).send;
+
+    var packet: [512]u8 = undefined;
+    var compression: [24]builder.CompressionEntry = undefined;
+    var b = try builder.Builder.init(&packet, &compression, first.id, .{ .response = true });
+    try b.addQuestion("a.example", .A, .IN);
+    try b.addNameRecord(.answer, "a.example", .CNAME, 60, "b.example");
+    const alias_action = try r.onValidatedResponse(first.handle, try b.finish(), 1, .secure);
+    try expectActionTag(.send, alias_action);
+
+    var b2 = try builder.Builder.init(&packet, &compression, alias_action.send.id, .{ .response = true });
+    try b2.addQuestion("b.example", .A, .IN);
+    try b2.addA(.answer, "b.example", 60, .{ 192, 0, 2, 2 });
+    const done = try r.onValidatedResponse(first.handle, try b2.finish(), 2, .insecure);
+    try expectActionTag(.complete, done);
+    try std.testing.expectEqual(SecurityStatus.insecure, done.complete.security);
 }
