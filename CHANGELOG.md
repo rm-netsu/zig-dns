@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-20
+
+- Add RFC 8945 TSIG parsing, transactional composition, HMAC-SHA1/HMAC-SHA256 authentication, truncation policy, BADTIME helpers, forwarding Original ID handling, and bounded multi-message MAC chaining.
+- Add RFC 2136 DNS UPDATE composition with semantic prerequisite/add/delete helpers, strict prescan, zone-containment enforcement, RFC 3597 unknown-type passthrough, and TSIG composition.
+- Add RFC 1996 NOTIFY request/response composition and transport-neutral response matching.
+- Add signed UPDATE and TSIG dnspython interoperability gates plus deterministic TSIG/UPDATE property replay.
+- Add bounded `tsig.auth.Key.init` helpers so examples and integrations do not need private wire-name conversion glue.
+- Reject signed BADKEY/BADSIG responses and invalid TSIG request/error combinations before wire mutation.
+- Reject UPDATE QTYPE/meta and reserved RR TYPE allocation ranges while preserving unknown ordinary and Private Use data RRTYPEs.
+- Tighten NOTIFY request/success-response envelopes and distinguish canonical successful acknowledgement validation from ordinary error RCODE handling.
+
 ## 0.2.0 - 2026-08-20
 
 - Add allocation-free DNSSEC canonical name ordering, canonical RR/RDATA serialization, RRset validation and canonical sorting.

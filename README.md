@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.2.0 is the current DNSSEC-validation release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.3.0 is the current authenticated-update release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -19,6 +19,9 @@ Version 0.2.0 is the current DNSSEC-validation release. The public API is still 
 - EDNS(0), extended RCODEs, ECS, EDE, padding, DNSSEC OK and Compact Answers OK flags;
 - DNSSEC canonical RRset serialization, RRSIG verification, DS/DNSKEY matching, NSEC/NSEC3 denial proofs, and chain-of-trust primitives;
 - caller-injected DNSSEC algorithm policy, crypto backend, time, and bounded scratch storage;
+- RFC 8945 TSIG HMAC authentication with bounded multi-message chaining and explicit truncation policy;
+- RFC 2136 Dynamic UPDATE composition/prescan with semantic prerequisite and add/delete APIs;
+- RFC 1996 SOA NOTIFY composition, validation, and transport-neutral response matching;
 - SVCB/HTTPS validation, including uncompressed targets and ordered SvcParams;
 - UDP truncation policy helper and incremental DNS-over-TCP decoder;
 - DoT, DoQ, and DoH wire/framing helpers without TLS, QUIC, or HTTP dependencies;
@@ -164,7 +167,7 @@ Two representations are intentionally available:
 
 ## Scope
 
-Version 0.2.0 includes:
+Version 0.3.0 includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;
@@ -172,7 +175,9 @@ Version 0.2.0 includes:
 - DNSSEC RR parsing, canonical RRsets, RRSIG verification, DS/DNSKEY matching, denial proofs, and trust-link primitives;
 - SVCB/HTTPS wire validation;
 - DoT/DoH/DoQ protocol adaptation helpers;
-- bounded resolver transaction and response-building helpers.
+- bounded resolver transaction and response-building helpers;
+- TSIG request/response authentication and transfer-ready continuation MAC state;
+- Dynamic UPDATE composition/validation and SOA NOTIFY protocol primitives.
 
 Deliberately outside the protocol core:
 
@@ -181,7 +186,6 @@ Deliberately outside the protocol core:
 - recursive resolution algorithm and delegation walking;
 - cache eviction/staleness/prefetch policy;
 - recursive DNSSEC delegation walking and trust-anchor lifecycle management;
-- TSIG signing/authentication;
 - mDNS/LLMNR policy;
 - zone-file text parsing.
 
@@ -192,6 +196,8 @@ These can be layered above the wire/core APIs without forcing their resource mod
 - [`docs/architecture.md`](docs/architecture.md) — ownership, parsing, encoding, and layering.
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
 - [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
+- [`docs/tsig.md`](docs/tsig.md) — RFC 8945 signing, verification, error semantics, and multi-message chaining.
+- [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and NOTIFY composition/validation.
 - [`docs/performance.md`](docs/performance.md) — release A/B methodology and DNSSEC benchmark baseline.
 - [`FUZZING.md`](FUZZING.md) — deterministic property corpus and suggested fuzz entry points.
 
@@ -203,7 +209,10 @@ zig build check
 zig build example-inspect
 zig build example-resolver
 zig build example-dnssec
+zig build example-update
 zig build interop-dnssec     # optional: requires dnspython + cryptography
+zig build interop-tsig       # optional: requires dnspython
+zig build interop-update     # optional: requires dnspython
 zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
 ```
