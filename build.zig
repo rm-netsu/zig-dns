@@ -59,6 +59,18 @@ pub fn build(b: *std.Build) void {
     const high_level_resolver_step = b.step("example-high-level-resolver", "Run the bounded high-level resolver example");
     high_level_resolver_step.dependOn(&b.addRunArtifact(high_level_resolver_example).step);
 
+    const authoritative_mod = b.createModule(.{
+        .root_source_file = b.path("examples/authoritative.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const authoritative_example = b.addExecutable(.{ .name = "dns-authoritative-example", .root_module = authoritative_mod });
+    check.dependOn(&authoritative_example.step);
+
+    const authoritative_step = b.step("example-authoritative", "Run the authoritative composition example");
+    authoritative_step.dependOn(&b.addRunArtifact(authoritative_example).step);
+
     const dnssec_mod = b.createModule(.{
         .root_source_file = b.path("examples/dnssec.zig"),
         .target = target,
@@ -126,6 +138,17 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&high_level_bench.step);
     const high_level_bench_step = b.step("bench-high-level", "Benchmark high-level resolver lifecycles");
     high_level_bench_step.dependOn(&b.addRunArtifact(high_level_bench).step);
+
+    const authoritative_bench_mod = b.createModule(.{
+        .root_source_file = b.path("bench/authoritative.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "dns", .module = mod }},
+    });
+    const authoritative_bench = b.addExecutable(.{ .name = "dns-authoritative-bench", .root_module = authoritative_bench_mod });
+    check.dependOn(&authoritative_bench.step);
+    const authoritative_bench_step = b.step("bench-authoritative", "Benchmark authoritative response composition");
+    authoritative_bench_step.dependOn(&b.addRunArtifact(authoritative_bench).step);
 
     const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
     const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
