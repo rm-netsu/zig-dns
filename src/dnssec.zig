@@ -109,34 +109,9 @@ pub fn nsec3param(rr: message.Record) Error!Nsec3Param {
     };
 }
 
-pub fn dnskeyKeyTag(rdata: []const u8) Error!u16 {
-    // DNSKEY RDATA is Flags(2), Protocol(1), Algorithm(1), Public Key.
-    if (rdata.len < 4) return error.InvalidDnskey;
-    if (rdata[3] == 1) {
-        // Historical RSA/MD5 (algorithm 1) uses the RSA modulus instead of
-        // the normal checksum. The public-key encoding is exponent-length,
-        // exponent, then modulus (RFC 2537). RFC 4034 erratum 193 clarifies
-        // that the tag is the 3rd-to-last and 2nd-to-last modulus octets.
-        const key = rdata[4..];
-        if (key.len < 2) return error.InvalidDnskey;
-        var exponent_len: usize = key[0];
-        var modulus_start: usize = 1;
-        if (exponent_len == 0) {
-            if (key.len < 3) return error.InvalidDnskey;
-            exponent_len = std.mem.readInt(u16, key[1..3], .big);
-            modulus_start = 3;
-        }
-        if (exponent_len == 0 or modulus_start + exponent_len >= key.len) return error.InvalidDnskey;
-        const modulus = key[modulus_start + exponent_len ..];
-        if (modulus.len < 3) return error.InvalidDnskey;
-        return (@as(u16, modulus[modulus.len - 3]) << 8) | modulus[modulus.len - 2];
-    }
-
-    var ac: u32 = 0;
-    for (rdata, 0..) |b, i| ac += if ((i & 1) == 0) @as(u32, b) << 8 else b;
-    ac += (ac >> 16) & 0xffff;
-    return @truncate(ac);
-}
+pub const key = @import("dnssec/key.zig");
+pub const ds = @import("dnssec/ds.zig");
+pub const dnskeyKeyTag = key.keyTag;
 
 pub fn validateUncompressedNameInRdata(rr: message.Record, relative: usize) Error!usize {
     if (relative >= rr.rdata.len) return error.InvalidLength;
@@ -152,16 +127,4 @@ test "type bitmap iteration" {
     try std.testing.expectEqual(types.Type.RRSIG, (try it.next()).?);
     try std.testing.expectEqual(types.Type.NSEC, (try it.next()).?);
     try std.testing.expect((try it.next()) == null);
-}
-
-test "dnskey key tag matches generic RFC 4034 algorithm" {
-    const r = [_]u8{ 0x01, 0x01, 0x03, 0x08, 0xaa, 0xbb, 0xcc, 0xdd };
-    const tag = try dnskeyKeyTag(&r);
-    try std.testing.expect(tag != 0);
-}
-
-test "dnskey algorithm 1 key tag uses corrected modulus octets" {
-    // flags=0x0101, protocol=3, algorithm=1; exponent=3; modulus=aabbccdd.
-    const r = [_]u8{ 0x01, 0x01, 0x03, 0x01, 0x01, 0x03, 0xaa, 0xbb, 0xcc, 0xdd };
-    try std.testing.expectEqual(@as(u16, 0xbbcc), try dnskeyKeyTag(&r));
 }
