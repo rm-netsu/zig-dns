@@ -458,6 +458,110 @@ pub fn Composer(comptime Store: type) type {
     };
 }
 
+/// Allocation-free reference store over caller-owned zone records.
+///
+/// This adapter deliberately uses linear scans so it remains tiny and useful
+/// for examples, tests, embedded zones, and correctness baselines. Large
+/// authoritative deployments should implement the same `Composer` structural
+/// contract with their own indexed/database-backed store.
+pub const SliceStore = struct {
+    pub const Error = error{};
+
+    pub const RecordIterator = struct {
+        records: []const ZoneRecord,
+        owner: name_mod.Uncompressed,
+        rr_type: types.Type,
+        pos: usize = 0,
+
+        pub fn next(self: *RecordIterator) Error!?ZoneRecord {
+            while (self.pos < self.records.len) {
+                const rr = self.records[self.pos];
+                self.pos += 1;
+                if (rr.rr_type == self.rr_type and (namesEqual(rr.owner, self.owner) catch false)) return rr;
+            }
+            return null;
+        }
+    };
+
+    records: []const ZoneRecord,
+    apex_name: name_mod.Uncompressed,
+
+    pub fn init(apex_name: name_mod.Uncompressed, records: []const ZoneRecord) SliceStore {
+        return .{ .records = records, .apex_name = apex_name };
+    }
+
+    pub fn apex(self: *SliceStore) name_mod.Uncompressed {
+        return self.apex_name;
+    }
+
+    pub fn lookup(self: *SliceStore, owner: name_mod.Uncompressed, rr_type: types.Type) Error!?RecordIterator {
+        var probe: RecordIterator = .{ .records = self.records, .owner = owner, .rr_type = rr_type };
+        if ((try probe.next()) == null) return null;
+        return .{ .records = self.records, .owner = owner, .rr_type = rr_type };
+    }
+
+    /// DNS name existence includes empty non-terminals: a name exists if it
+    /// owns data or is a strict ancestor of any owner in this zone view.
+    pub fn nameExists(self: *SliceStore, owner: name_mod.Uncompressed) Error!bool {
+        if (!(isSubdomain(owner, self.apex_name) catch false)) return false;
+        for (self.records) |rr| {
+            if (namesEqual(rr.owner, owner) catch false) return true;
+            if (isSubdomain(rr.owner, owner) catch false) return true;
+        }
+        return false;
+    }
+
+    /// Return the closest enclosing non-apex NS owner (zone cut).
+    pub fn findDelegation(self: *SliceStore, qname: name_mod.Uncompressed) Error!?name_mod.Uncompressed {
+        var best: ?name_mod.Uncompressed = null;
+        for (self.records) |rr| {
+            if (rr.rr_type != .NS) continue;
+            if (namesEqual(rr.owner, self.apex_name) catch false) continue;
+            if (!(isSubdomain(qname, rr.owner) catch false)) continue;
+            if (best == null or (isSubdomain(rr.owner, best.?) catch false) and !(namesEqual(rr.owner, best.?) catch false)) best = rr.owner;
+        }
+        return best;
+    }
+
+    /// Return the closest strict ancestor carrying DNAME.
+    pub fn findDname(self: *SliceStore, qname: name_mod.Uncompressed) Error!?name_mod.Uncompressed {
+        var best: ?name_mod.Uncompressed = null;
+        for (self.records) |rr| {
+            if (rr.rr_type != .DNAME) continue;
+            if (namesEqual(qname, rr.owner) catch false) continue;
+            if (!(isSubdomain(qname, rr.owner) catch false)) continue;
+            if (best == null or (isSubdomain(rr.owner, best.?) catch false) and !(namesEqual(rr.owner, best.?) catch false)) best = rr.owner;
+        }
+        return best;
+    }
+
+    /// RFC 4592 closest-encloser wildcard selection. The returned source is
+    /// always borrowed from an existing record owner, so no mutable scratch or
+    /// hidden allocation is required and the store remains thread-safe.
+    pub fn findWildcard(self: *SliceStore, qname: name_mod.Uncompressed) Error!?name_mod.Uncompressed {
+        var canonical_buf: [name_mod.Name.max_wire_len]u8 = undefined;
+        const canonical = (name_mod.Name.init(qname.bytes, 0) catch return null).writeCanonicalWire(&canonical_buf) catch return null;
+
+        var pos: usize = 0;
+        while (pos < canonical.len) {
+            const label_len: usize = canonical[pos];
+            if (label_len == 0) return null;
+            pos += 1 + label_len; // parent candidate; qname itself was already absent.
+            const parent = name_mod.Uncompressed.init(canonical[pos..]) catch return null;
+            if (!(isSubdomain(parent, self.apex_name) catch false)) return null;
+            if (!(try self.nameExists(parent))) continue;
+
+            for (self.records) |rr| {
+                if (rr.owner.bytes.len < 3 or rr.owner.bytes[0] != 1 or rr.owner.bytes[1] != '*') continue;
+                const suffix = name_mod.Uncompressed.init(rr.owner.bytes[2..]) catch continue;
+                if (namesEqual(suffix, parent) catch false) return rr.owner;
+            }
+            return null;
+        }
+        return null;
+    }
+};
+
 fn inspectQuery(query: message.Message) CoreError!QueryInfo {
     if (query.header.flags.response or query.header.flags.opcode != .query) return error.ExpectedQuery;
     if (query.header.question_count != 1) return error.ExpectedOneQuestion;
@@ -660,21 +764,33 @@ fn firstRecord(m: message.Message, section: types.Section) !message.Record {
 const apex_wire_storage = wire("example");
 const www_wire_storage = wire("www.example");
 const alias_wire_storage = wire("alias.example");
+const missing_wire_storage = wire("missing.example");
 const wildcard_wire_storage = wire("*.example");
 const child_wire_storage = wire("child.example");
 const ns_child_wire_storage = wire("ns.child.example");
 const old_wire_storage = wire("old.example");
 const new_wire_storage = wire("new.example");
+const ent_wire_storage = wire("ent.example");
+const host_ent_wire_storage = wire("host.ent.example");
+const missing_ent_wire_storage = wire("missing.ent.example");
+const host_child_wire_storage = wire("host.child.example");
+const x_old_wire_storage = wire("x.old.example");
 const ns_wire_storage = wire("ns.example");
 const hostmaster_wire_storage = wire("hostmaster.example");
 const apex_wire: []const u8 = &apex_wire_storage;
 const www_wire: []const u8 = &www_wire_storage;
 const alias_wire: []const u8 = &alias_wire_storage;
+const missing_wire: []const u8 = &missing_wire_storage;
 const wildcard_wire: []const u8 = &wildcard_wire_storage;
 const child_wire: []const u8 = &child_wire_storage;
 const ns_child_wire: []const u8 = &ns_child_wire_storage;
 const old_wire: []const u8 = &old_wire_storage;
 const new_wire: []const u8 = &new_wire_storage;
+const ent_wire: []const u8 = &ent_wire_storage;
+const host_ent_wire: []const u8 = &host_ent_wire_storage;
+const missing_ent_wire: []const u8 = &missing_ent_wire_storage;
+const host_child_wire: []const u8 = &host_child_wire_storage;
+const x_old_wire: []const u8 = &x_old_wire_storage;
 const ns_wire: []const u8 = &ns_wire_storage;
 const hostmaster_wire: []const u8 = &hostmaster_wire_storage;
 
@@ -730,6 +846,49 @@ const base_items = [_]TestStore.Item{
     .{ .rr = .{ .owner = .{ .bytes = ns_child_wire }, .rr_type = .A, .class = .IN, .ttl = 600, .rdata = &.{ 192, 0, 2, 53 } } },
     .{ .rr = .{ .owner = .{ .bytes = old_wire }, .rr_type = .DNAME, .class = .IN, .ttl = 300, .rdata = new_wire } },
 };
+
+test "SliceStore resolves empty non-terminals closest wildcard delegation and DNAME" {
+    const records = [_]ZoneRecord{
+        .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata },
+        .{ .owner = .{ .bytes = wildcard_wire }, .rr_type = .A, .class = .IN, .ttl = 60, .rdata = &.{ 192, 0, 2, 44 } },
+        .{ .owner = .{ .bytes = host_ent_wire }, .rr_type = .A, .class = .IN, .ttl = 60, .rdata = &.{ 192, 0, 2, 45 } },
+        .{ .owner = .{ .bytes = child_wire }, .rr_type = .NS, .class = .IN, .ttl = 60, .rdata = ns_child_wire },
+        .{ .owner = .{ .bytes = ns_child_wire }, .rr_type = .A, .class = .IN, .ttl = 60, .rdata = &.{ 192, 0, 2, 53 } },
+        .{ .owner = .{ .bytes = old_wire }, .rr_type = .DNAME, .class = .IN, .ttl = 60, .rdata = new_wire },
+    };
+    var store = SliceStore.init(.{ .bytes = apex_wire }, &records);
+
+    try std.testing.expect(try store.nameExists(.{ .bytes = ent_wire })); // empty non-terminal
+    const wildcard = (try store.findWildcard(.{ .bytes = missing_wire })).?;
+    try std.testing.expect(try namesEqual(wildcard, .{ .bytes = wildcard_wire }));
+    try std.testing.expect((try store.findWildcard(.{ .bytes = missing_ent_wire })) == null);
+
+    const cut = (try store.findDelegation(.{ .bytes = host_child_wire })).?;
+    try std.testing.expect(try namesEqual(cut, .{ .bytes = child_wire }));
+    const dname_owner = (try store.findDname(.{ .bytes = x_old_wire })).?;
+    try std.testing.expect(try namesEqual(dname_owner, .{ .bytes = old_wire }));
+}
+
+test "SliceStore composes wildcard and empty-nonterminal NODATA without custom glue code" {
+    const records = [_]ZoneRecord{
+        .{ .owner = .{ .bytes = apex_wire }, .rr_type = .SOA, .class = .IN, .ttl = 60, .rdata = &soa_rdata },
+        .{ .owner = .{ .bytes = wildcard_wire }, .rr_type = .A, .class = .IN, .ttl = 60, .rdata = &.{ 192, 0, 2, 77 } },
+        .{ .owner = .{ .bytes = host_ent_wire }, .rr_type = .A, .class = .IN, .ttl = 60, .rdata = &.{ 192, 0, 2, 78 } },
+    };
+    var store = SliceStore.init(.{ .bytes = apex_wire }, &records);
+    var composer = Composer(SliceStore).init(&store);
+    var qbuf: [512]u8 = undefined;
+    var qcomp: [24]builder.CompressionEntry = undefined;
+    var out: [1024]u8 = undefined;
+    var comp: [48]builder.CompressionEntry = undefined;
+
+    const wildcard = try composer.compose(try makeQuery(&qbuf, &qcomp, "missing.example", .A, false), &out, &comp, .{});
+    try std.testing.expectEqual(Kind.wildcard, wildcard.kind);
+
+    const ent = try composer.compose(try makeQuery(&qbuf, &qcomp, "ent.example", .AAAA, false), &out, &comp, .{});
+    try std.testing.expectEqual(Kind.nodata, ent.kind);
+    try std.testing.expectEqual(types.Rcode.no_error, (try message.Message.init(ent.bytes)).header.flags.rcode());
+}
 
 test "authoritative composer answers exact CNAME wildcard and negative queries" {
     var store: TestStore = .{ .items = &base_items, .apex_name = .{ .bytes = apex_wire } };
