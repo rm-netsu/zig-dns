@@ -105,12 +105,17 @@ _ = try cache.putPresentation("www.example", .{
 
 Supported entry kinds are positive RRset, NXDOMAIN, NODATA, and delegation.
 NXDOMAIN lookup is name/class-wide; NODATA and positive data are type-specific.
-`findDelegation*` returns the deepest live cached ancestor.
+`findDelegation*` returns the deepest live cached ancestor. Fresh existence data
+(positive, NODATA, or delegation) invalidates an exact-name NXDOMAIN, while a
+new NXDOMAIN invalidates contradictory exact-name positive/NODATA/delegation
+entries.
 
-The cache owns no clock or eviction policy. `now` is injected. When all slots
-are live, `put*` returns `Full` unless the caller explicitly supplies a
-replacement slot. `slotView` and `reusableSlot` are provided to build custom
-replacement policies without exposing internal implementation details.
+The cache owns no clock or eviction policy. `now` is injected.
+`remainingTtl(expires_at, now)` derives the TTL to emit or display. When all
+slots are live, `put*` returns `Full` unless the caller explicitly supplies a
+replacement slot. `slotView`, `reusableSlot`, and exact-name invalidation are
+provided to build custom replacement/coherence policies without exposing
+internal implementation details.
 
 For authoritative negative responses:
 
