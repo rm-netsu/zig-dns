@@ -3,6 +3,13 @@
 ## Unreleased
 
 - Replace synthetic core microbenchmarks with a deterministic real-RRset wire corpus and an interleaved cross-tag A/B runner that reports MAD and paired regression deltas.
+- Add zero-copy resolver response classification for answers, CNAME/DNAME, referrals, NODATA/NXDOMAIN, truncation, and terminal RCODEs.
+- Add bounded caller-owned CNAME/DNAME chains with loop/depth/storage limits, DNAME substitution, and synthesized-CNAME validation.
+- Enforce RFC 6672 uncompressed DNAME targets in both builders and strict validation.
+- Add structured referral extraction with NS/DS iterators and bailiwick-aware in-domain/sibling/out-of-bailiwick glue filtering.
+- Add generic bounded cache primitives for positive, NXDOMAIN, NODATA, and delegation entries with DNSSEC status, injected time, explicit replacement, and RFC 2308 negative TTL helpers.
+- Add transport-neutral retry planning with TCP fallback, EDNS fallback constraints, alternate-server decisions, and RFC 9520 retry caps.
+- Add deterministic resolver-classification replay, a compile-checked resolver composition example, and a ReleaseFast resolver-semantics benchmark baseline.
 
 ## 0.4.0 - 2026-08-20
 
