@@ -55,4 +55,21 @@ pub const Snapshot = struct {
             parsed.expire == self.expire and
             parsed.minimum == self.minimum;
     }
+
+    pub fn eqlSnapshot(
+        self: Snapshot,
+        storage: *const Storage,
+        other: Snapshot,
+        other_storage: *const Storage,
+    ) Error!bool {
+        if (self.class != other.class or self.ttl != other.ttl or
+            self.serial != other.serial or self.refresh != other.refresh or
+            self.retry != other.retry or self.expire != other.expire or
+            self.minimum != other.minimum) return false;
+        const self_mname = try name_mod.Name.init(storage.mname[0..self.mname_len], 0);
+        const self_rname = try name_mod.Name.init(storage.rname[0..self.rname_len], 0);
+        const other_mname = try name_mod.Name.init(other_storage.mname[0..other.mname_len], 0);
+        const other_rname = try name_mod.Name.init(other_storage.rname[0..other.rname_len], 0);
+        return try self_mname.eqlIgnoreCase(other_mname) and try self_rname.eqlIgnoreCase(other_rname);
+    }
 };
