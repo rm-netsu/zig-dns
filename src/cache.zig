@@ -25,6 +25,10 @@ pub fn expiresAt(now: u64, ttl_seconds: u32) u64 {
     return now +| @as(u64, ttl_seconds);
 }
 
+pub fn remainingTtl(expires_at: u64, now: u64) u64 {
+    return expires_at -| now;
+}
+
 pub const NegativeTtlError = rdata.Error || error{InvalidRecordType};
 
 /// RFC 2308 negative-cache TTL carried by an SOA: min(SOA RR TTL,
@@ -159,6 +163,7 @@ pub fn Fixed(comptime Payload: type, comptime capacity: usize, comptime max_name
             const canonical = try (try name_mod.Name.init(name.bytes, 0)).writeCanonicalWire(&canonical_buf);
             if (canonical.len > max_name_wire) return error.NameTooLong;
 
+            self.invalidateContradictions(canonical, meta);
             var index = self.findLogicalKey(canonical, meta);
             if (index == null) index = self.reusableSlot(now);
             if (index == null) {
@@ -175,6 +180,28 @@ pub fn Fixed(comptime Payload: type, comptime capacity: usize, comptime max_name
             slot.payload = payload;
             slot.active = true;
             return i;
+        }
+
+        /// Invalidate all entries at one exact owner/class. This is useful
+        /// when higher-level resolver policy learns that cached RRsets for a
+        /// name must be discarded together.
+        pub fn invalidatePresentation(self: *Self, presentation: []const u8, class: types.Class) Error!usize {
+            var wire_buf: [name_mod.Name.max_wire_len]u8 = undefined;
+            const wire = try name_mod.writePresentationWire(presentation, &wire_buf);
+            return self.invalidateWire(try name_mod.Uncompressed.init(wire), class);
+        }
+
+        pub fn invalidateWire(self: *Self, name: name_mod.Uncompressed, class: types.Class) Error!usize {
+            var canonical_buf: [name_mod.Name.max_wire_len]u8 = undefined;
+            const canonical = try (try name_mod.Name.init(name.bytes, 0)).writeCanonicalWire(&canonical_buf);
+            var removed: usize = 0;
+            for (&self.slots) |*slot| {
+                if (!slot.active or slot.meta.class != class) continue;
+                if (!std.mem.eql(u8, slot.name[0..slot.name_len], canonical)) continue;
+                slot.active = false;
+                removed += 1;
+            }
+            return removed;
         }
 
         /// Lookup positive/NODATA/NXDOMAIN data for one query. NXDOMAIN is
@@ -238,6 +265,18 @@ pub fn Fixed(comptime Payload: type, comptime capacity: usize, comptime max_name
                 return false;
             }
             return true;
+        }
+
+        fn invalidateContradictions(self: *Self, canonical: []const u8, meta: Meta) void {
+            for (&self.slots) |*slot| {
+                if (!slot.active or slot.meta.class != meta.class) continue;
+                if (!std.mem.eql(u8, slot.name[0..slot.name_len], canonical)) continue;
+                const contradicts = switch (meta.kind) {
+                    .nxdomain => slot.meta.kind == .positive or slot.meta.kind == .nodata or slot.meta.kind == .delegation,
+                    .positive, .nodata, .delegation => slot.meta.kind == .nxdomain,
+                };
+                if (contradicts) slot.active = false;
+            }
         }
 
         fn findLogicalKey(self: *const Self, canonical: []const u8, meta: Meta) ?usize {
@@ -360,4 +399,34 @@ test "negative cache TTL follows RFC 2308 SOA minimum rule" {
     const msg2 = try message.Message.init(try b2.finish());
     var authority2 = try msg2.records(.authority);
     try std.testing.expectEqual(@as(u32, 30), try negativeTtl((try authority2.next()).?));
+}
+
+test "fresh existence and NXDOMAIN entries invalidate exact-name contradictions" {
+    const Cache = Fixed(u8, 4, 64);
+    var cache = Cache.init();
+    _ = try cache.putPresentation("host.example", .{ .kind = .nxdomain, .expires_at = 1000 }, 1, 0, null);
+    _ = try cache.putPresentation("host.example", .{ .kind = .positive, .rr_type = .A, .expires_at = 1000 }, 2, 0, null);
+    const positive = (try cache.lookupPresentation("host.example", .A, .IN, 1)).?;
+    try std.testing.expectEqual(Kind.positive, positive.meta.kind);
+    try std.testing.expectEqual(@as(u8, 2), positive.payload.*);
+
+    _ = try cache.putPresentation("host.example", .{ .kind = .nodata, .rr_type = .AAAA, .expires_at = 1000 }, 3, 0, null);
+    _ = try cache.putPresentation("host.example", .{ .kind = .delegation, .expires_at = 1000 }, 4, 0, null);
+    _ = try cache.putPresentation("host.example", .{ .kind = .nxdomain, .expires_at = 1000 }, 5, 0, null);
+    try std.testing.expectEqual(@as(usize, 1), cache.activeCount(1));
+    const nx = (try cache.lookupPresentation("host.example", .TXT, .IN, 1)).?;
+    try std.testing.expectEqual(Kind.nxdomain, nx.meta.kind);
+    try std.testing.expectEqual(@as(u8, 5), nx.payload.*);
+}
+
+test "cache exposes remaining TTL and exact-name invalidation" {
+    try std.testing.expectEqual(@as(u64, 25), remainingTtl(100, 75));
+    try std.testing.expectEqual(@as(u64, 0), remainingTtl(75, 100));
+
+    const Cache = Fixed(u8, 2, 64);
+    var cache = Cache.init();
+    _ = try cache.putPresentation("same.example", .{ .kind = .positive, .rr_type = .A, .expires_at = 100 }, 1, 0, null);
+    _ = try cache.putPresentation("same.example", .{ .kind = .positive, .rr_type = .AAAA, .expires_at = 100 }, 2, 0, null);
+    try std.testing.expectEqual(@as(usize, 2), try cache.invalidatePresentation("SAME.EXAMPLE.", .IN));
+    try std.testing.expectEqual(@as(usize, 0), cache.activeCount(1));
 }
