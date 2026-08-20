@@ -30,10 +30,13 @@ pub const AlgorithmPolicy = struct {
 };
 
 fn registry2026Recommendation(_: ?*const anyopaque, algorithm: u8) Recommendation {
+    // "Use for DNSSEC Validation" from the IANA registry snapshot. This is
+    // acceptance policy, not an assertion that the selected crypto backend
+    // implements every accepted algorithm.
     return switch (algorithm) {
         1, 3, 6, 12 => .prohibited,
         5, 7, 8, 10, 13, 14, 15, 16 => .recommended,
-        17, 23, 253, 254 => .may,
+        17, 18, 23, 253, 254 => .may,
         else => .unknown,
     };
 }
@@ -41,6 +44,7 @@ fn registry2026Recommendation(_: ?*const anyopaque, algorithm: u8) Recommendatio
 test "registry policy separates recommendations from unknown algorithms" {
     const p = AlgorithmPolicy.registry_2026_01_13;
     try @import("std").testing.expect(p.accepts(15));
+    try @import("std").testing.expectEqual(Recommendation.may, p.recommendation(18));
     try @import("std").testing.expectEqual(Recommendation.prohibited, p.recommendation(3));
     try @import("std").testing.expectEqual(Recommendation.unknown, p.recommendation(200));
 }
