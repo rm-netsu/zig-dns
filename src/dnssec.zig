@@ -3,6 +3,9 @@ const types = @import("types.zig");
 const message = @import("message.zig");
 const name_mod = @import("name.zig");
 
+pub const canonical = @import("dnssec/canonical.zig");
+pub const CanonicalWriter = canonical.Writer;
+
 pub const Error = name_mod.Error || error{ InvalidLength, InvalidBitmap, Truncated, InvalidDnskey };
 
 pub const TypeBitmapIterator = struct {

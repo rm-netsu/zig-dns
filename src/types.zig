@@ -35,6 +35,7 @@ pub const Type = enum(u16) {
     NAPTR = 35,
     KX = 36,
     CERT = 37,
+    A6 = 38,
     DNAME = 39,
     OPT = 41,
     APL = 42,
