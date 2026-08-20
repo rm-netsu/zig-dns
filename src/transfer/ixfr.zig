@@ -557,6 +557,26 @@ test "IXFR streams several deltas across DNS message boundaries" {
     try std.testing.expectEqual(@as(usize, 12), event_count);
 }
 
+test "IXFR detects premature EOF inside incremental delta" {
+    var packet: [1024]u8 = undefined;
+    var compression: [32]builder_mod.CompressionEntry = undefined;
+    var builder = try responseBuilder(&packet, &compression, 0x3031, true);
+    try addSoa(&builder, 3);
+    try addSoa(&builder, 1);
+    try builder.addA(.answer, "old.example.com", 60, .{ 192, 0, 2, 1 });
+
+    var storage: Storage = .{};
+    var transfer = try Transfer.init(&storage, 0x3031, "example.com", .IN, 1);
+    var cursor = try transfer.openMessage(try message.Message.init(try builder.finish()));
+    while (try cursor.next()) |_| {}
+    try std.testing.expectError(error.PrematureEof, transfer.finish());
+}
+
+test "IXFR persistent state is bounded independently of delta count" {
+    try std.testing.expect(@sizeOf(Storage) <= 2048);
+    try std.testing.expect(@sizeOf(Transfer) <= 160);
+}
+
 test "IXFR detects AXFR fallback without materializing the zone" {
     var packet: [1536]u8 = undefined;
     var compression: [48]builder_mod.CompressionEntry = undefined;

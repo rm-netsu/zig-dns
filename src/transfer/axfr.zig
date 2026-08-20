@@ -498,6 +498,80 @@ test "AXFR composes with TCP decoder across every stream split" {
     }
 }
 
+test "AXFR composes with multi-response DoQ stream" {
+    const doq_mod = @import("../doq.zig");
+
+    var first_packet: [768]u8 = undefined;
+    var first_compression: [24]builder_mod.CompressionEntry = undefined;
+    var first = try responseBuilder(&first_packet, &first_compression, 0, true);
+    try addSoa(&first, 45);
+    try first.addA(.answer, "a.example.com", 60, .{ 192, 0, 2, 1 });
+    const first_wire = try first.finish();
+
+    var last_packet: [768]u8 = undefined;
+    var last_compression: [24]builder_mod.CompressionEntry = undefined;
+    var last = try responseBuilder(&last_packet, &last_compression, 0, false);
+    try last.addAAAA(.answer, "b.example.com", 60, .{0} ** 16);
+    try addSoa(&last, 45);
+    const last_wire = try last.finish();
+
+    var first_frame_buf: [1024]u8 = undefined;
+    const first_frame = try doq_mod.tcp.frame(first_wire, &first_frame_buf);
+    var last_frame_buf: [1024]u8 = undefined;
+    const last_frame = try doq_mod.tcp.frame(last_wire, &last_frame_buf);
+    var stream: [2048]u8 = undefined;
+    @memcpy(stream[0..first_frame.len], first_frame);
+    @memcpy(stream[first_frame.len..][0..last_frame.len], last_frame);
+    const stream_wire = stream[0 .. first_frame.len + last_frame.len];
+
+    // One-byte delivery exercises QUIC stream fragmentation independently
+    // from the DNS transfer state machine. Message storage is reused only
+    // after the borrowed AXFR cursor has been drained.
+    var decoder_storage: [1024]u8 = undefined;
+    var decoder = doq_mod.StreamDecoder.init(&decoder_storage, .multi_response);
+    var storage: Storage = .{};
+    var transfer = try Transfer.init(&storage, 0, "example.com", .IN);
+    var events: usize = 0;
+    for (stream_wire) |byte| {
+        const fed = try decoder.feed(&.{byte});
+        try std.testing.expectEqual(@as(usize, 1), fed.consumed);
+        if (fed.message) |m| {
+            var cursor = try transfer.openMessage(m);
+            while (try cursor.next()) |_| events += 1;
+        }
+    }
+    try decoder.finish();
+    try transfer.finish();
+    try std.testing.expectEqual(@as(usize, 2), decoder.messageCount());
+    try std.testing.expectEqual(@as(usize, 4), events);
+}
+
+test "AXFR persistent state remains bounded across hundreds of messages" {
+    try std.testing.expect(@sizeOf(Storage) <= 1024);
+    try std.testing.expect(@sizeOf(Transfer) <= 128);
+
+    var storage: Storage = .{};
+    var transfer = try Transfer.init(&storage, 0x9191, "example.com", .IN);
+    var packet: [768]u8 = undefined;
+    var compression: [24]builder_mod.CompressionEntry = undefined;
+    var event_count: usize = 0;
+
+    const message_count = 256;
+    for (0..message_count) |index| {
+        var builder = try responseBuilder(&packet, &compression, 0x9191, index == 0);
+        if (index == 0) try addSoa(&builder, 77);
+        try builder.addA(.answer, "node.example.com", 60, .{ 192, 0, 2, 77 });
+        if (index + 1 == message_count) try addSoa(&builder, 77);
+
+        var cursor = try transfer.openMessage(try message.Message.init(try builder.finish()));
+        while (try cursor.next()) |_| event_count += 1;
+    }
+
+    try transfer.finish();
+    // opening SOA + one ordinary RR per DNS message + closing SOA.
+    try std.testing.expectEqual(@as(usize, message_count + 2), event_count);
+}
+
 test "AXFR composes with RFC 8945 TSIG request and continuation MACs" {
     const tsig_mod = @import("../tsig.zig");
     const validate_mod = @import("../validate.zig");
