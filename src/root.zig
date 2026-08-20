@@ -16,6 +16,7 @@ pub const dot = @import("dot.zig");
 pub const doh = @import("doh.zig");
 pub const doq = @import("doq.zig");
 const property = @import("property.zig");
+const dnssec_interop_test = @import("dnssec/interop_test.zig");
 
 pub const Type = types.Type;
 pub const Class = types.Class;
@@ -50,4 +51,5 @@ test {
     _ = doh;
     _ = doq;
     _ = property;
+    _ = dnssec_interop_test;
 }
