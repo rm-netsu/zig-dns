@@ -80,7 +80,7 @@ test "operational EDNS parsers survive arbitrary payloads" {
         for (payload[0..len]) |*b| b.* = rng.byte();
         const data = payload[0..len];
 
-        switch (rng.next() % 16) {
+        switch (rng.next() % 17) {
             0 => _ = edns.parseCookie(.{ .code = .COOKIE, .data = data }) catch continue,
             1 => _ = edns.parseKeepalive(.{ .code = .KEEPALIVE, .data = data }) catch continue,
             2 => _ = edns.extendedError(.{ .code = .EDE, .data = data }) catch continue,
@@ -96,7 +96,8 @@ test "operational EDNS parsers survive arbitrary payloads" {
             12 => _ = edns.parseDau(.{ .code = .DAU, .data = data }) catch continue,
             13 => _ = edns.parseDhu(.{ .code = .DHU, .data = data }) catch continue,
             14 => _ = edns.parseN3u(.{ .code = .N3U, .data = data }) catch continue,
-            else => _ = edns.parseKeyTag(.{ .code = .KEY_TAG, .data = data }) catch continue,
+            15 => _ = edns.parseKeyTag(.{ .code = .KEY_TAG, .data = data }) catch continue,
+            else => _ = edns.parseChain(.{ .code = .CHAIN, .data = data }) catch continue,
         }
     }
 }
@@ -107,7 +108,7 @@ test "operational EDNS builders round trip deterministic generated values" {
 
     for (0..512) |_| {
         var options = edns.OptionBuilder.init(&option_bytes);
-        switch (rng.next() % 10) {
+        switch (rng.next() % 11) {
             0 => {
                 var client: [edns.cookie.client_length]u8 = undefined;
                 for (&client) |*b| b.* = rng.byte();
@@ -199,7 +200,7 @@ test "operational EDNS builders round trip deterministic generated values" {
                 const parsed = try edns.parseDau((try it.next()).?);
                 try std.testing.expectEqualSlices(u8, algorithms[0..len], parsed.algorithms);
             },
-            else => {
+            9 => {
                 var tags: [8]u16 = undefined;
                 const len: usize = 1 + @as(usize, @intCast(rng.next() % tags.len));
                 for (tags[0..len]) |*tag| tag.* = @truncate(rng.next());
@@ -209,6 +210,13 @@ test "operational EDNS builders round trip deterministic generated values" {
                 try std.testing.expectEqual(len, parsed.count());
                 var parsed_it = parsed.iterator();
                 for (tags[0..len]) |tag| try std.testing.expectEqual(tag, parsed_it.next().?);
+            },
+            else => {
+                const wire = [_]u8{ 3, 'c', 'o', 'm', 0 };
+                try options.addChain(try name.Uncompressed.init(&wire));
+                var it: edns.Iterator = .{ .bytes = options.bytes() };
+                const parsed = try edns.parseChain((try it.next()).?);
+                try std.testing.expectEqualSlices(u8, &wire, parsed.closest_trust_point.bytes);
             },
         }
     }

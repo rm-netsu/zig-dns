@@ -54,7 +54,7 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             if (owner.len != 0) return error.InvalidOptOwner;
             const opt = try edns.Opt.fromRecord(rr);
             if (options.require_edns_version_zero and opt.version != 0) return error.UnsupportedEdnsVersion;
-            const option_summary = try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
+            const option_summary = try edns.validateMessageOptions(opt, .{ .response = m.header.flags.response, .opcode = m.header.flags.opcode, .checking_disabled = m.header.flags.checking_disabled });
             if (option_summary.has_zoneversion) try validateZoneVersionQuestion(m, opt);
             try validateMultipleQtypeQuestion(m, option_summary);
             try validateKeyTagQuestion(m, option_summary);
@@ -557,4 +557,36 @@ test "strict validator enforces RFC 8145 key tag query type and ignores response
     try response.addQuestion("example.com", .DNSKEY, .IN);
     try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
     _ = try messageStrict(try message.Message.init(try response.finish()), .{});
+}
+
+test "strict validator applies RFC 7901 CHAIN DO and CD ignore semantics" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [32]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var malformed = edns.OptionBuilder.init(&option_buf);
+    try malformed.add(.CHAIN, &.{ 0xc0, 0x00 });
+
+    var no_do = try builder_mod.Builder.init(&packet, &compression, 0x8b01, .{});
+    try no_do.addQuestion("www.example.com", .A, .IN);
+    try no_do.addOpt(1232, 0, 0, .{}, malformed.bytes());
+    _ = try messageStrict(try message.Message.init(try no_do.finish()), .{});
+
+    var cd = try builder_mod.Builder.init(&packet, &compression, 0x8b02, .{ .checking_disabled = true });
+    try cd.addQuestion("www.example.com", .A, .IN);
+    try cd.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, malformed.bytes());
+    _ = try messageStrict(try message.Message.init(try cd.finish()), .{});
+
+    var active = try builder_mod.Builder.init(&packet, &compression, 0x8b03, .{});
+    try active.addQuestion("www.example.com", .A, .IN);
+    try active.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, malformed.bytes());
+    try std.testing.expectError(error.InvalidChain, messageStrict(try message.Message.init(try active.finish()), .{}));
+
+    var valid_options = edns.OptionBuilder.init(&option_buf);
+    try valid_options.addChainPresentation("com.");
+    var valid = try builder_mod.Builder.init(&packet, &compression, 0x8b04, .{});
+    try valid.addQuestion("www.example.com", .A, .IN);
+    try valid.addOpt(1232, 0, 0, .{ .dnssec_ok = true }, valid_options.bytes());
+    _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
 }

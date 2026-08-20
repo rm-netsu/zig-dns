@@ -18,6 +18,7 @@ The current operational surface includes:
 | --- | --- | --- |
 | NSID | `parseNsid`, `addNsidRequest`, `addNsidResponse` | request builder is empty; response payload is opaque binary |
 | DAU/DHU/N3U | `parseDau` / `parseDhu` / `parseN3u`, `addDau` / `addDhu` / `addN3u` | borrowed RFC 6975 algorithm lists; one instance of each code per query |
+| CHAIN | `parseChain`, `addChainDiscovery`, `addChain`, `addChainPresentation` | RFC 7901 empty discovery or complete uncompressed closest-trust-point name |
 | Key Tag | `parseKeyTag`, `addKeyTags` | one-or-more 16-bit tags per option; multiple query option instances are preserved |
 | Update Lease | `parseUpdateLease`, `addUpdateLease` | 4-byte and KEY-specific 8-byte forms |
 | ECS | `clientSubnet`, `addClientSubnet` | family/prefix validation and canonical host-bit clearing |
@@ -57,6 +58,28 @@ failure because RFC 8145 requires clients to ignore this option in responses.
 Neither helper decides whether signaling should be enabled. Validator role,
 trust-anchor privacy policy, and which currently assigned algorithms to signal
 remain caller policy.
+
+## CHAIN
+
+RFC 7901 CHAIN is exposed as either `.discovery` for an empty option payload or
+a borrowed complete uncompressed wire name for the closest trust point. The
+builders never use DNS compression. `addChainPresentation()` converts a
+presentation name into caller-owned temporary wire form and then commits the
+option transactionally.
+
+Whole-message strict validation applies the receiver semantics that depend on
+DNS header and OPT flags. In a query, CHAIN is active only when DO is set and CD
+is clear. If DO is clear or CD is set, the option is ignored even when its
+payload is malformed, as RFC 7901 requires. An active CHAIN is limited to the
+QUERY opcode. The validator deliberately does not require the supplied trust
+point to be an ancestor of QNAME: RFC 7901 defines an out-of-path request as a
+valid request to which a server can respond with an empty CHAIN option.
+
+Two requirements are intentionally outside standalone message validation. A
+client must correlate a CHAIN response with a request that actually carried
+CHAIN, and a non-empty CHAIN response is only meaningful when the source address
+has been verified by the surrounding transport. Both require transaction or
+transport state that the protocol core does not own.
 
 ## DNS Cookies
 

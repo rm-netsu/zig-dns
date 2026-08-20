@@ -14,6 +14,7 @@ const padding_mod = @import("edns/padding.zig");
 const nsid_mod = @import("edns/nsid.zig");
 const algorithm_signal_mod = @import("edns/algorithm_signal.zig");
 const key_tag_mod = @import("edns/key_tag.zig");
+const chain_mod = @import("edns/chain.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
@@ -27,9 +28,10 @@ pub const padding = padding_mod;
 pub const nsid = nsid_mod;
 pub const algorithm_signal = algorithm_signal_mod;
 pub const key_tag = key_tag_mod;
+pub const chain = chain_mod;
 
 pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, MQTYPE_QUERY = 20, MQTYPE_RESPONSE = 21, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding, InvalidAlgorithmSignal, InvalidKeyTag };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion, InvalidMultipleQtype, InvalidExpire, InvalidReportChannel, InvalidPadding, InvalidAlgorithmSignal, InvalidKeyTag, InvalidChain };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -189,6 +191,12 @@ pub fn parseKeyTag(opt: Option) Error!KeyTagList {
     return key_tag_mod.parse(opt.data) catch error.InvalidKeyTag;
 }
 
+pub const Chain = chain_mod.Chain;
+pub fn parseChain(opt: Option) Error!Chain {
+    if (opt.code != .CHAIN) return error.InvalidOption;
+    return chain_mod.parse(opt.data) catch error.InvalidChain;
+}
+
 pub const Padding = padding_mod.Padding;
 pub fn parsePadding(opt: Option) Error!Padding {
     if (opt.code != .PADDING) return error.InvalidOption;
@@ -245,6 +253,7 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
         .KEY_TAG => {
             if (!response) _ = try parseKeyTag(opt);
         },
+        .CHAIN => _ = try parseChain(opt),
         .ECS => _ = try clientSubnet(opt),
         .EXPIRE => {
             const value = try parseExpire(opt);
@@ -287,12 +296,19 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
     }
 }
 
+pub const MessageOptionContext = struct {
+    response: bool,
+    opcode: types.Opcode,
+    checking_disabled: bool = false,
+};
+
 pub const MessageOptionSummary = struct {
     has_zoneversion: bool = false,
     has_key_tag: bool = false,
     has_dau: bool = false,
     has_dhu: bool = false,
     has_n3u: bool = false,
+    has_chain: bool = false,
     has_padding: bool = false,
     report_channel: ?Option = null,
     mqtype_query: ?Option = null,
@@ -304,7 +320,9 @@ pub const MessageOptionSummary = struct {
 /// Keeping semantic discovery in the same pass as known-option validation
 /// avoids repeatedly rescanning every OPT RDATA in the common path where
 /// operational extensions are absent.
-pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Error!MessageOptionSummary {
+pub fn validateMessageOptions(opt: Opt, context: MessageOptionContext) Error!MessageOptionSummary {
+    const response = context.response;
+    const opcode = context.opcode;
     var summary: MessageOptionSummary = .{};
     var iterator = opt.iterator();
     var seen_cookie = false;
@@ -316,7 +334,9 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
             seen_cookie = true;
         }
 
-        try validateKnownOption(option, response);
+        const ignore_chain = option.code == .CHAIN and !response and
+            (!opt.dnssecOk() or context.checking_disabled);
+        if (!ignore_chain) try validateKnownOption(option, response);
         switch (option.code) {
             .EXPIRE => if (opcode != .query) return error.InvalidExpire,
             .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
@@ -338,6 +358,11 @@ pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Er
             },
             .KEY_TAG => {
                 if (!response) summary.has_key_tag = true;
+            },
+            .CHAIN => {
+                if (ignore_chain) continue;
+                if (!response and opcode != .query) return error.InvalidChain;
+                summary.has_chain = true;
             },
             .REPORT_CHANNEL => {
                 if (summary.report_channel != null) return error.InvalidReportChannel;
@@ -541,6 +566,21 @@ pub const OptionBuilder = struct {
             std.mem.writeInt(u16, self.out[start + 4 + i * 2 ..][0..2], tag, .big);
         }
         self.pos += 4 + data_len;
+    }
+
+    pub fn addChainDiscovery(self: *OptionBuilder) error{NoSpace}!void {
+        try self.add(.CHAIN, &.{});
+    }
+
+    pub fn addChain(self: *OptionBuilder, closest_trust_point: name_mod.Uncompressed) error{NoSpace}!void {
+        try self.add(.CHAIN, closest_trust_point.bytes);
+    }
+
+    pub fn addChainPresentation(self: *OptionBuilder, closest_trust_point: []const u8) error{ NoSpace, InvalidChain }!void {
+        var wire: [name_mod.Name.max_wire_len]u8 = undefined;
+        const encoded = name_mod.writePresentationWire(closest_trust_point, &wire) catch return error.InvalidChain;
+        const uncompressed = name_mod.Uncompressed.init(encoded) catch return error.InvalidChain;
+        try self.addChain(uncompressed);
     }
 
     pub fn addKeepaliveRequest(self: *OptionBuilder) error{NoSpace}!void {
@@ -891,8 +931,8 @@ test "RFC 6975 query rejects duplicate option codes but response values are igno
     try builder.addDau(&.{8});
     try builder.addDau(&.{13});
     const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
-    try std.testing.expectError(error.InvalidAlgorithmSignal, validateMessageOptions(opt, false, .query));
-    _ = try validateMessageOptions(opt, true, .query);
+    try std.testing.expectError(error.InvalidAlgorithmSignal, validateMessageOptions(opt, .{ .response = false, .opcode = .query }));
+    _ = try validateMessageOptions(opt, .{ .response = true, .opcode = .query });
 }
 
 test "RFC 8145 typed key tag builder supports multiple option instances" {
@@ -921,6 +961,47 @@ test "RFC 8145 response option payload is ignored by strict EDNS validation" {
     // even though this odd-length payload is not a valid query-side list.
     try builder.add(.KEY_TAG, &.{0xff});
     const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
-    try std.testing.expectError(error.InvalidKeyTag, validateMessageOptions(opt, false, .query));
-    _ = try validateMessageOptions(opt, true, .query);
+    try std.testing.expectError(error.InvalidKeyTag, validateMessageOptions(opt, .{ .response = false, .opcode = .query }));
+    _ = try validateMessageOptions(opt, .{ .response = true, .opcode = .query });
+}
+
+test "RFC 7901 CHAIN builders preserve discovery and uncompressed trust point" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addChainDiscovery();
+    try builder.addChainPresentation("com.");
+
+    var it: Iterator = .{ .bytes = builder.bytes() };
+    try std.testing.expectEqual(Chain.discovery, try parseChain((try it.next()).?));
+    const chain_value = try parseChain((try it.next()).?);
+    try std.testing.expectEqualSlices(u8, &.{ 3, 'c', 'o', 'm', 0 }, chain_value.closest_trust_point.bytes);
+}
+
+test "RFC 7901 active query rejects malformed CHAIN while DO-CD ignore rule skips it" {
+    var bytes: [16]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.add(.CHAIN, &.{ 0xc0, 0x00 });
+
+    const active: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{ .dnssec_ok = true }, .options = builder.bytes() };
+    try std.testing.expectError(error.InvalidChain, validateMessageOptions(active, .{ .response = false, .opcode = .query }));
+
+    const no_do: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{}, .options = builder.bytes() };
+    const ignored_no_do = try validateMessageOptions(no_do, .{ .response = false, .opcode = .query });
+    try std.testing.expect(!ignored_no_do.has_chain);
+
+    const ignored_cd = try validateMessageOptions(active, .{ .response = false, .opcode = .query, .checking_disabled = true });
+    try std.testing.expect(!ignored_cd.has_chain);
+
+    try std.testing.expectError(error.InvalidChain, validateMessageOptions(active, .{ .response = true, .opcode = .query }));
+}
+
+test "RFC 7901 active CHAIN is QUERY-only but does not assume trust point is QNAME ancestor" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addChainPresentation("unrelated.ca.");
+    const opt: Opt = .{ .udp_payload_size = 1232, .extended_rcode = 0, .version = 0, .flags = .{ .dnssec_ok = true }, .options = builder.bytes() };
+
+    const summary = try validateMessageOptions(opt, .{ .response = false, .opcode = .query });
+    try std.testing.expect(summary.has_chain);
+    try std.testing.expectError(error.InvalidChain, validateMessageOptions(opt, .{ .response = false, .opcode = .update }));
 }
