@@ -1,6 +1,6 @@
 # DNSSEC validation
 
-The development branch for 0.2.0 adds a transport-neutral DNSSEC validation engine on top of the 0.1.0 wire primitives. It still does not own sockets, a recursive resolver, a wall clock, or trust-anchor persistence.
+Version 0.2.0 adds a transport-neutral DNSSEC validation engine on top of the 0.1.0 wire primitives. It still does not own sockets, a recursive resolver, a wall clock, or trust-anchor persistence.
 
 ## Validation model
 

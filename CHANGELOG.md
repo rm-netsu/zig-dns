@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-20
+
 - Add allocation-free DNSSEC canonical name ordering, canonical RR/RDATA serialization, RRset validation and canonical sorting.
 - Add streaming RRSIG signed-data generation with Original TTL and wildcard-owner reconstruction.
 - Add DS digest generation, DNSKEY key tags/matching, injectable algorithm policy, and an injectable crypto backend.

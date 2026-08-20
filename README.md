@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.1.0 is the latest tagged protocol-core release. The development branch is building the 0.2.0 DNSSEC validation layer. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.2.0 is the current DNSSEC-validation release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -164,7 +164,7 @@ Two representations are intentionally available:
 
 ## Scope
 
-Core plus current 0.2.0 development work includes:
+Version 0.2.0 includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;
