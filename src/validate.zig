@@ -54,7 +54,8 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
             if (owner.len != 0) return error.InvalidOptOwner;
             const opt = try edns.Opt.fromRecord(rr);
             if (options.require_edns_version_zero and opt.version != 0) return error.UnsupportedEdnsVersion;
-            try edns.validateOptions(opt, m.header.flags.response);
+            try edns.validateMessageOptions(opt, m.header.flags.response, m.header.flags.opcode);
+            try validateZoneVersionQuestion(m, opt);
             result.opt = opt;
         } else if (rr.rr_type == .TSIG) {
             if (result.tsig != null) return error.MultipleTsig;
@@ -65,6 +66,46 @@ pub fn messageStrict(m: message.Message, options: Options) Error!Result {
         } else if (options.validate_known_rdata) try knownRdata(rr);
     }
     return result;
+}
+
+fn validateZoneVersionQuestion(m: message.Message, opt: edns.Opt) Error!void {
+    var iterator = opt.iterator();
+    var has_zoneversion = false;
+    while (try iterator.next()) |option| {
+        if (option.code == .ZONEVERSION) {
+            has_zoneversion = true;
+            break;
+        }
+    }
+    if (!has_zoneversion) return;
+    if (m.header.question_count != 1) return error.InvalidZoneVersion;
+
+    var questions = m.questions();
+    const question = (try questions.next()) orelse return error.InvalidZoneVersion;
+    if (!m.header.flags.response) return;
+
+    // RFC 9660 forbids duplicate response tuples with the same
+    // (LABELCOUNT, TYPE). Track all 256 extensible TYPE values with a fixed
+    // 4 KiB bitmap so attacker-controlled option counts cannot turn strict
+    // validation into an O(n^2) scan. A valid DNS QNAME cannot have more
+    // than 127 non-root labels, so one u128 covers LABELCOUNT after the
+    // QNAME-bound check below.
+    var seen: [256]u128 = [_]u128{0} ** 256;
+    var response_options = opt.iterator();
+    while (try response_options.next()) |option| {
+        if (option.code != .ZONEVERSION) continue;
+        const version = try edns.parseZoneVersion(option, true);
+        switch (version) {
+            .request => return error.InvalidZoneVersion,
+            .response => |value| {
+                value.validateQname(question.name) catch return error.InvalidZoneVersion;
+                const type_index: usize = @intFromEnum(value.version_type);
+                const bit = @as(u128, 1) << @intCast(value.label_count);
+                if (seen[type_index] & bit != 0) return error.InvalidZoneVersion;
+                seen[type_index] |= bit;
+            },
+        }
+    }
 }
 
 fn shouldValidateKnownRdata(opcode: types.Opcode, section: types.Section, rr: message.Record) bool {
@@ -246,4 +287,60 @@ test "strict validator checks TCP keepalive direction" {
     try response.addQuestion("example.com", .A, .IN);
     try response.addOpt(1232, 0, 0, .{}, response_options.bytes());
     _ = try messageStrict(try message.Message.init(try response.finish()), .{});
+}
+
+test "strict validator enforces Update Lease opcode" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [16]u8 = undefined;
+    var opts = edns.OptionBuilder.init(&option_buf);
+    try opts.addUpdateLease(.{ .lease = 3600 });
+
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8201, .{});
+    try query.addQuestion("example.com", .A, .IN);
+    try query.addOpt(1232, 0, 0, .{}, opts.bytes());
+    try std.testing.expectError(error.InvalidUpdateLease, messageStrict(try message.Message.init(try query.finish()), .{}));
+
+    var update = try builder_mod.Builder.init(&packet, &compression, 0x8202, .{ .opcode = .update });
+    try update.addQuestion("example.com", .SOA, .IN);
+    try update.addOpt(1232, 0, 0, .{}, opts.bytes());
+    _ = try messageStrict(try message.Message.init(try update.finish()), .{});
+}
+
+test "strict validator checks ZONEVERSION query multiplicity and response label count" {
+    const builder_mod = @import("builder.zig");
+    var option_buf: [32]u8 = undefined;
+    var packet: [256]u8 = undefined;
+    var compression: [16]builder_mod.CompressionEntry = undefined;
+
+    var duplicate = edns.OptionBuilder.init(&option_buf);
+    try duplicate.addZoneVersionRequest();
+    try duplicate.addZoneVersionRequest();
+    var query = try builder_mod.Builder.init(&packet, &compression, 0x8301, .{});
+    try query.addQuestion("www.example.com", .A, .IN);
+    try query.addOpt(1232, 0, 0, .{}, duplicate.bytes());
+    try std.testing.expectError(error.InvalidZoneVersion, messageStrict(try message.Message.init(try query.finish()), .{}));
+
+    var response_opts = edns.OptionBuilder.init(&option_buf);
+    try response_opts.addZoneVersionSoaSerial(4, 1234);
+    var response = try builder_mod.Builder.init(&packet, &compression, 0x8302, .{ .response = true, .authoritative = true });
+    try response.addQuestion("www.example.com", .A, .IN);
+    try response.addOpt(1232, 0, 0, .{}, response_opts.bytes());
+    try std.testing.expectError(error.InvalidZoneVersion, messageStrict(try message.Message.init(try response.finish()), .{}));
+
+    var duplicate_response_opts = edns.OptionBuilder.init(&option_buf);
+    try duplicate_response_opts.addZoneVersionSoaSerial(2, 1234);
+    try duplicate_response_opts.addZoneVersionSoaSerial(2, 5678);
+    var duplicate_response = try builder_mod.Builder.init(&packet, &compression, 0x8303, .{ .response = true, .authoritative = true });
+    try duplicate_response.addQuestion("www.example.com", .A, .IN);
+    try duplicate_response.addOpt(1232, 0, 0, .{}, duplicate_response_opts.bytes());
+    try std.testing.expectError(error.InvalidZoneVersion, messageStrict(try message.Message.init(try duplicate_response.finish()), .{}));
+
+    var valid_opts = edns.OptionBuilder.init(&option_buf);
+    try valid_opts.addZoneVersionSoaSerial(2, 1234);
+    var valid = try builder_mod.Builder.init(&packet, &compression, 0x8304, .{ .response = true, .authoritative = true });
+    try valid.addQuestion("www.example.com", .A, .IN);
+    try valid.addOpt(1232, 0, 0, .{}, valid_opts.bytes());
+    _ = try messageStrict(try message.Message.init(try valid.finish()), .{});
 }

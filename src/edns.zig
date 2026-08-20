@@ -1,15 +1,20 @@
 const std = @import("std");
 const message = @import("message.zig");
+const types = @import("types.zig");
 const cookie_mod = @import("edns/cookie.zig");
 const keepalive_mod = @import("edns/keepalive.zig");
 const ede_mod = @import("edns/ede.zig");
+const update_lease_mod = @import("edns/update_lease.zig");
+const zoneversion_mod = @import("edns/zoneversion.zig");
 
 pub const cookie = cookie_mod;
 pub const keepalive = keepalive_mod;
 pub const ede = ede_mod;
+pub const update_lease = update_lease_mod;
+pub const zoneversion = zoneversion_mod;
 
-pub const OptionCode = enum(u16) { NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, _ };
-pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError };
+pub const OptionCode = enum(u16) { UPDATE_LEASE = 2, NSID = 3, DAU = 5, DHU = 6, N3U = 7, ECS = 8, EXPIRE = 9, COOKIE = 10, KEEPALIVE = 11, PADDING = 12, CHAIN = 13, KEY_TAG = 14, EDE = 15, REPORT_CHANNEL = 18, ZONEVERSION = 19, _ };
+pub const Error = error{ NotOpt, Truncated, InvalidOption, InvalidClientSubnet, InvalidCookie, InvalidKeepalive, MissingCookie, IncorrectClientCookie, MissingServerCookie, InvalidExtendedError, InvalidUpdateLease, InvalidZoneVersion };
 
 pub const Flags = packed struct(u16) {
     unassigned: u14 = 0,
@@ -111,8 +116,21 @@ pub fn parseKeepalive(opt: Option) Error!Keepalive {
     return keepalive_mod.parse(opt.data) catch error.InvalidKeepalive;
 }
 
+pub const UpdateLease = update_lease_mod.UpdateLease;
+pub fn parseUpdateLease(opt: Option) Error!UpdateLease {
+    if (opt.code != .UPDATE_LEASE) return error.InvalidOption;
+    return update_lease_mod.parse(opt.data) catch error.InvalidUpdateLease;
+}
+
+pub const ZoneVersion = zoneversion_mod.ZoneVersion;
+pub fn parseZoneVersion(opt: Option, response: bool) Error!ZoneVersion {
+    if (opt.code != .ZONEVERSION) return error.InvalidOption;
+    return zoneversion_mod.parse(opt.data, response) catch error.InvalidZoneVersion;
+}
+
 pub fn validateKnownOption(opt: Option, response: bool) Error!void {
     switch (opt.code) {
+        .UPDATE_LEASE => _ = try parseUpdateLease(opt),
         .ECS => _ = try clientSubnet(opt),
         .COOKIE => _ = try parseCookie(opt),
         .KEEPALIVE => {
@@ -123,6 +141,7 @@ pub fn validateKnownOption(opt: Option, response: bool) Error!void {
             }
         },
         .EDE => _ = try extendedError(opt),
+        .ZONEVERSION => _ = try parseZoneVersion(opt, response),
         else => {},
     }
 }
@@ -138,6 +157,28 @@ pub fn validateOptions(opt: Opt, response: bool) Error!void {
             seen_cookie = true;
         }
         try validateKnownOption(option, response);
+    }
+}
+
+/// Strict message-context checks for options whose validity depends on the
+/// DNS opcode or on whether the message is a query/response.
+pub fn validateMessageOptions(opt: Opt, response: bool, opcode: types.Opcode) Error!void {
+    try validateOptions(opt, response);
+
+    var iterator = opt.iterator();
+    var seen_zoneversion_query = false;
+    while (try iterator.next()) |option| {
+        switch (option.code) {
+            .UPDATE_LEASE => if (opcode != .update) return error.InvalidUpdateLease,
+            .ZONEVERSION => {
+                if (opcode != .query) return error.InvalidZoneVersion;
+                if (!response) {
+                    if (seen_zoneversion_query) return error.InvalidZoneVersion;
+                    seen_zoneversion_query = true;
+                }
+            },
+            else => {},
+        }
     }
 }
 
@@ -198,6 +239,12 @@ pub const OptionBuilder = struct {
         @memcpy(self.out[self.pos + 4 ..][0..data.len], data);
         self.pos += 4 + data.len;
     }
+    pub fn addUpdateLease(self: *OptionBuilder, value: UpdateLease) error{NoSpace}!void {
+        var payload: [8]u8 = undefined;
+        const wire = try update_lease_mod.write(value, &payload);
+        try self.add(.UPDATE_LEASE, wire);
+    }
+
     pub fn addCookie(self: *OptionBuilder, client: [cookie_mod.client_length]u8, server: ?[]const u8) (error{ NoSpace, InvalidCookie })!void {
         const data_len = cookie_mod.validateServerLength(server) catch return error.InvalidCookie;
         if (self.pos + 4 + data_len > self.out.len) return error.NoSpace;
@@ -271,6 +318,16 @@ pub const OptionBuilder = struct {
 
     pub fn addExtendedErrorCode(self: *OptionBuilder, code: ExtendedErrorCode, text: []const u8) error{ NoSpace, InvalidExtendedError }!void {
         return self.addExtendedError(@intFromEnum(code), text);
+    }
+
+    pub fn addZoneVersionRequest(self: *OptionBuilder) error{NoSpace}!void {
+        try self.add(.ZONEVERSION, &.{});
+    }
+
+    pub fn addZoneVersionSoaSerial(self: *OptionBuilder, label_count: u8, serial: u32) error{NoSpace}!void {
+        var payload: [6]u8 = undefined;
+        const wire = try zoneversion_mod.writeSoaSerial(label_count, serial, &payload);
+        try self.add(.ZONEVERSION, wire);
     }
 
     pub fn addPadding(self: *OptionBuilder, len: usize) error{NoSpace}!void {
@@ -365,4 +422,19 @@ test "EDE typed builder and filtered iterator preserve multiple diagnostics" {
     const before = builder.pos;
     try std.testing.expectError(error.InvalidExtendedError, builder.addExtendedErrorCode(.other_error, "bad\xc0"));
     try std.testing.expectEqual(before, builder.pos);
+}
+
+test "Update Lease and ZONEVERSION typed builders round trip" {
+    var bytes: [64]u8 = undefined;
+    var builder = OptionBuilder.init(&bytes);
+    try builder.addUpdateLease(.{ .lease = 120, .key_lease = 3600 });
+    try builder.addZoneVersionSoaSerial(2, 2_023_073_001);
+
+    var iterator: Iterator = .{ .bytes = builder.bytes() };
+    const lease = try parseUpdateLease((try iterator.next()).?);
+    try std.testing.expectEqual(@as(u32, 120), lease.lease);
+    try std.testing.expectEqual(@as(?u32, 3600), lease.key_lease);
+
+    const version = try parseZoneVersion((try iterator.next()).?, true);
+    try std.testing.expectEqual(@as(?u32, 2_023_073_001), version.response.soaSerial());
 }
