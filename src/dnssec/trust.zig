@@ -7,13 +7,9 @@ const key = @import("key.zig");
 const ds_mod = @import("ds.zig");
 const policy_mod = @import("policy.zig");
 const crypto_backend = @import("crypto_backend.zig");
+const status_mod = @import("status.zig");
 
-pub const SecurityStatus = enum {
-    secure,
-    insecure,
-    bogus,
-    indeterminate,
-};
+pub const SecurityStatus = status_mod.SecurityStatus;
 
 pub const Reason = enum {
     unproven_delegation,

@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const name_mod = @import("name.zig");
-const dnssec = @import("dnssec.zig");
+const dnssec_status = @import("dnssec/status.zig");
 const message = @import("message.zig");
 const rdata = @import("rdata.zig");
 const builder = @import("builder.zig");
@@ -17,7 +17,7 @@ pub const Meta = struct {
     kind: Kind,
     rr_type: types.Type = .A,
     class: types.Class = .IN,
-    security: dnssec.SecurityStatus = .indeterminate,
+    security: dnssec_status.SecurityStatus = .indeterminate,
     expires_at: u64,
 };
 
@@ -322,7 +322,7 @@ test "fixed cache stores positive NODATA and name-wide NXDOMAIN" {
 
     const a = (try cache.lookupPresentation("www.example.", .A, .IN, 110)).?;
     try std.testing.expectEqual(@as(u32, 11), a.payload.*);
-    try std.testing.expectEqual(dnssec.SecurityStatus.secure, a.meta.security);
+    try std.testing.expectEqual(dnssec_status.SecurityStatus.secure, a.meta.security);
     const aaaa = (try cache.lookupPresentation("WWW.EXAMPLE", .AAAA, .IN, 110)).?;
     try std.testing.expectEqual(Kind.nodata, aaaa.meta.kind);
 
