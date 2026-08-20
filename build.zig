@@ -59,4 +59,8 @@ pub fn build(b: *std.Build) void {
     const dnssec_step = b.step("example-dnssec", "Run the DNSSEC composition example");
     const run_dnssec = b.addRunArtifact(dnssec_example);
     dnssec_step.dependOn(&run_dnssec.step);
+
+    const interop_dnssec = b.step("interop-dnssec", "Validate DNSSEC RFC vectors with dnspython");
+    const run_dnssec_interop = b.addSystemCommand(&.{ "python3", b.pathFromRoot("interop/dnssec_vectors.py") });
+    interop_dnssec.dependOn(&run_dnssec_interop.step);
 }
