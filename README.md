@@ -6,7 +6,7 @@ A transport-neutral DNS protocol library for Zig 0.16.0.
 
 ## Status
 
-Version 0.5.0 is the current resolver-semantics release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
+Version 0.6.0 is the current high-level resolver-composition release. The public API is still pre-1.0 and may be refined as real integrations exercise it.
 
 ## Highlights
 
@@ -27,7 +27,8 @@ Version 0.5.0 is the current resolver-semantics release. The public API is still
 - DoT, DoQ, and DoH wire/framing helpers without TLS, QUIC, or HTTP dependencies;
 - fixed-capacity resolver transaction table for pipelined/out-of-order responses;
 - zero-copy response classification, bounded CNAME/DNAME chains, structured referral/glue extraction, bounded cache primitives, and retry planning;
-- deterministic parser/builder/fragmentation/resolver property tests.
+- bounded high-level resolver state machine with generation-safe handles, UDP/TCP/DoT/DoQ/DoH actions, alias/referral composition, cache hooks, and DNSSEC status propagation;
+- deterministic parser/builder/fragmentation/resolver/high-level lifecycle property tests.
 
 ## Package integration
 
@@ -168,7 +169,7 @@ Two representations are intentionally available:
 
 ## Scope
 
-Version 0.5.0 includes:
+Version 0.6.0 includes:
 
 - RFC 1035 message/header/question/RR wire processing;
 - EDNS(0) and common EDNS options;
@@ -177,6 +178,7 @@ Version 0.5.0 includes:
 - SVCB/HTTPS wire validation;
 - DoT/DoH/DoQ protocol adaptation helpers;
 - bounded resolver transaction/response helpers plus response classification, alias processing, referral extraction, cache primitives, and retry planning;
+- a bounded high-level resolver state machine that returns transport/cache/referral/completion actions while leaving I/O, clocks, server addresses, and runtime ownership to the caller;
 - TSIG request/response authentication and transfer-ready continuation MAC state;
 - Dynamic UPDATE composition/validation and SOA NOTIFY protocol primitives.
 - allocation-free AXFR/IXFR receivers with semantic events, AXFR fallback, RFC 1982 serial handling, and bounded persistent state;
@@ -186,8 +188,8 @@ Deliberately outside the protocol core:
 
 - socket and event-loop ownership;
 - TLS/QUIC/HTTP implementations;
-- recursive resolution algorithm and delegation walking;
-- cache eviction/staleness/prefetch policy;
+- network ownership, upstream address discovery, and recursive server-selection policy;
+- cache eviction/staleness/prefetch/failure-cache policy;
 - recursive DNSSEC delegation walking and trust-anchor lifecycle management;
 - mDNS/LLMNR policy;
 - zone-file text parsing.
@@ -200,6 +202,7 @@ These can be layered above the wire/core APIs without forcing their resource mod
 - [`docs/transports.md`](docs/transports.md) — UDP, TCP, DoT, DoQ, and DoH integration.
 - [`docs/transfer.md`](docs/transfer.md) — allocation-free AXFR/IXFR streaming and TCP/DoQ/TSIG composition.
 - [`docs/resolver.md`](docs/resolver.md) — response semantics, aliases, referrals/glue, bounded cache primitives, and retry planning.
+- [`docs/high_level_resolver.md`](docs/high_level_resolver.md) — bounded query lifecycle, transport actions, cache/DNSSEC hooks, and referral composition.
 - [`docs/dnssec.md`](docs/dnssec.md) — DNSSEC validation, canonical RRsets, denial proofs, and crypto-policy boundaries.
 - [`docs/tsig.md`](docs/tsig.md) — RFC 8945 signing, verification, error semantics, and multi-message chaining.
 - [`docs/update.md`](docs/update.md) — Dynamic UPDATE, signed UPDATE, and NOTIFY composition/validation.
@@ -213,6 +216,7 @@ zig build test
 zig build check
 zig build example-inspect
 zig build example-resolver
+zig build example-high-level-resolver
 zig build example-dnssec
 zig build example-update
 zig build interop-dnssec     # optional: requires dnspython + cryptography
@@ -222,6 +226,7 @@ zig build bench-core -Doptimize=ReleaseFast
 zig build bench-dnssec -Doptimize=ReleaseFast
 zig build bench-transfer -Doptimize=ReleaseFast
 zig build bench-resolver -Doptimize=ReleaseFast
+zig build bench-high-level -Doptimize=ReleaseFast
 ```
 
 The project targets Zig 0.16.0.

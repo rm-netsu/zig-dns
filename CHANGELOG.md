@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-20
+
+- Add a bounded caller-owned high-level resolver state machine with generation-safe handles and fixed compile-time query/alias limits.
+- Return transport-neutral UDP/TCP/DoT/DoQ/DoH actions without owning sockets, timers, TLS, QUIC, HTTP, threads, or an allocator.
+- Compose ID allocation/matching, EDNS downgrade, retry budgets, UDP truncation fallback, CNAME/DNAME continuation, and caller-driven referral descent.
+- Add cache lookup/store hooks with injected time and conservative DNSSEC security-status composition; bogus validation results are terminal and never enter cache hooks.
+- Complete recursive responses containing CNAME/DNAME plus the terminal target answer in the same packet without an unnecessary follow-up query.
+- Add arbitrary-octet wire-name query/response helpers used by the high-level lifecycle.
+- Add deterministic high-level lifecycle replay with stale-handle, capacity, malformed-response, retry, and mixed-transport coverage.
+- Add a compile-checked high-level resolver example, explicit persistent-state budgets, and ReleaseFast lifecycle benchmarks.
+- Re-run the real-RRset core A/B benchmark against v0.5.0; no core parser/validator/name/builder regression was confirmed within the observed paired-run spread.
+
 ## 0.5.0 - 2026-08-20
 
 - Replace synthetic core microbenchmarks with a deterministic real-RRset wire corpus and an interleaved cross-tag A/B runner that reports MAD and paired regression deltas.
