@@ -5,6 +5,8 @@ const message = @import("message.zig");
 const client = @import("client.zig");
 const edns = @import("edns.zig");
 
+pub const response = @import("resolver/response.zig");
+
 pub const QueryOptions = struct {
     recursion_desired: bool = true,
     checking_disabled: bool = false,
@@ -71,9 +73,9 @@ pub fn FixedTransactions(comptime capacity: usize) type {
             };
             const idx = found orelse return error.UnknownTransaction;
             var e = &self.entries[idx];
-            const response = try client.validateResponse(e.id, .{ .name = e.name[0..e.name_len], .qtype = e.qtype, .qclass = e.qclass }, bytes);
+            const parsed_response = try client.validateResponse(e.id, .{ .name = e.name[0..e.name_len], .qtype = e.qtype, .qclass = e.qclass }, bytes);
             e.active = false;
-            return .{ .index = idx, .response = response };
+            return .{ .index = idx, .response = parsed_response };
         }
 
         pub fn activeCount(self: *const Self) usize {
