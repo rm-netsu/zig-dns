@@ -4,6 +4,7 @@ const name_mod = @import("../name.zig");
 const message = @import("../message.zig");
 const rdata = @import("../rdata.zig");
 const builder_mod = @import("../builder.zig");
+const soa_mod = @import("soa.zig");
 
 pub const Error = message.ParseError || rdata.Error || builder_mod.Error || error{
     InvalidClass,
@@ -31,22 +32,10 @@ pub const Error = message.ParseError || rdata.Error || builder_mod.Error || erro
 /// number of messages and records in the transfer.
 pub const Storage = struct {
     zone: [name_mod.Name.max_wire_len]u8 = undefined,
-    opening_mname: [name_mod.Name.max_wire_len]u8 = undefined,
-    opening_rname: [name_mod.Name.max_wire_len]u8 = undefined,
+    opening: soa_mod.Storage = .{},
 };
 
 const Phase = enum { awaiting_first, body, complete, failed };
-
-const OpeningSoa = struct {
-    ttl: u32,
-    mname_len: u16,
-    rname_len: u16,
-    serial: u32,
-    refresh: u32,
-    retry: u32,
-    expire: u32,
-    minimum: u32,
-};
 
 pub const Event = union(enum) {
     /// First SOA of the transfer. This RR is not repeated as `.record`.
@@ -66,7 +55,7 @@ pub const Transfer = struct {
     expected_id: u16,
     zone_class: types.Class,
     zone_len: u16,
-    opening: ?OpeningSoa = null,
+    opening: ?soa_mod.Snapshot = null,
     phase: Phase = .awaiting_first,
     message_open: bool = false,
 
@@ -178,36 +167,14 @@ pub const Transfer = struct {
     fn captureOpening(self: *Transfer, rr: message.Record) Error!void {
         if (rr.class != self.zone_class) return error.RecordClassMismatch;
         if (!(try rr.name.eqlIgnoreCase(try self.zoneName()))) return error.SoaOwnerMismatch;
-        const soa = try rdata.soa(rr);
-        const mname = try soa.mname.writeCanonicalWire(&self.storage.opening_mname);
-        const rname = try soa.rname.writeCanonicalWire(&self.storage.opening_rname);
-        self.opening = .{
-            .ttl = rr.ttl,
-            .mname_len = @intCast(mname.len),
-            .rname_len = @intCast(rname.len),
-            .serial = soa.serial,
-            .refresh = soa.refresh,
-            .retry = soa.retry,
-            .expire = soa.expire,
-            .minimum = soa.minimum,
-        };
+        self.opening = try soa_mod.Snapshot.capture(rr, &self.storage.opening);
     }
 
     fn closingMatches(self: Transfer, rr: message.Record) Error!bool {
         const opening = self.opening orelse return false;
-        if (rr.class != self.zone_class or rr.ttl != opening.ttl) return false;
+        if (rr.class != self.zone_class) return false;
         if (!(try rr.name.eqlIgnoreCase(try self.zoneName()))) return false;
-
-        const soa = try rdata.soa(rr);
-        const mname = try name_mod.Name.init(self.storage.opening_mname[0..opening.mname_len], 0);
-        const rname = try name_mod.Name.init(self.storage.opening_rname[0..opening.rname_len], 0);
-        return try soa.mname.eqlIgnoreCase(mname) and
-            try soa.rname.eqlIgnoreCase(rname) and
-            soa.serial == opening.serial and
-            soa.refresh == opening.refresh and
-            soa.retry == opening.retry and
-            soa.expire == opening.expire and
-            soa.minimum == opening.minimum;
+        return opening.eqlRecord(&self.storage.opening, rr);
     }
 
     fn fail(self: *Transfer) void {
